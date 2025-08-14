@@ -1,0 +1,61 @@
+{
+  "name": "syncmate",
+  "version": "1.1.0",
+  "description": "AWS Parameter StoreとCSVファイル間でパラメータを同期するCLIツール",
+  "main": "dist/index.js",
+  "bin": {
+    "smc": "dist/cli/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli/cli.js",
+    "dev": "ts-node src/cli/cli.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts --fix",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm run lint && npm run type-check && npm test",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "aws",
+    "parameter-store",
+    "secrets-manager",
+    "csv",
+    "sync",
+    "cli",
+    "typescript"
+  ],
+  "author": "Asano Haruki <asano.haruki@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asano-haruki/syncmate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/asano-haruki/syncmate/issues"
+  },
+  "homepage": "https://github.com/asano-haruki/syncmate#readme",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/client-ssm": "^3.700.0",
+    "@aws-sdk/credential-providers": "^3.844.0",
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}
