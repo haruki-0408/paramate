@@ -39,6 +39,7 @@
   "homepage": "https://github.com/asano-haruki/syncmate#readme",
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.700.0",
+    "@aws-sdk/client-sts": "^3.700.0",
     "@aws-sdk/credential-providers": "^3.844.0",
     "chalk": "^4.1.2",
     "commander": "^12.0.0",

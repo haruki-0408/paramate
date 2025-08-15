@@ -45,7 +45,7 @@ export class Logger {
   }
 
   static updated(message: string): void {
-    this.log('updated', message, chalk.cyan);
+    this.log('updated', message, chalk.green);
   }
 
   static skipped(message: string): void {
@@ -61,7 +61,7 @@ export class Logger {
   }
 
   static header(title: string): void {
-    console.log(`\n${chalk.bold.blue(`> ${title}`)}`);
+    console.log(`\n${chalk.bold.green(`> ${title}`)}`);
     this.separator();
   }
 
@@ -71,28 +71,45 @@ export class Logger {
     console.log(chalk.bold(`[Summary]`));
     console.log(`  ${chalk.green(`${this.getIcon('success')} Success:`)} ${result.success}`);
     console.log(`  ${chalk.red(`${this.getIcon('error')} Failed:`)} ${result.failed}`);
-    console.log(`  ${chalk.cyan(`${this.getIcon('updated')} Updated:`)} ${result.updated}`);
+    console.log(`  ${chalk.green(`${this.getIcon('updated')} Updated:`)} ${result.updated}`);
     console.log(`  ${chalk.gray(`${this.getIcon('skipped')} Skipped:`)} ${result.skipped}`);
     this.separator();
   }
 
   // 差分表示用のヘルパーメソッド
   static diffSection(title: string, count: number, iconType: 'create' | 'update' | 'skip'): void {
-    const icons = {
-      create: '[CREATE]',
-      update: '[UPDATE]', 
-      skip: '[SKIP]'
+    const sections = {
+      create: chalk.green(`[CREATE] ${title} (${count} items):`),
+      update: chalk.green(`[UPDATE] ${title} (${count} items):`), 
+      skip: chalk.gray(`[SKIP] ${title} (${count} items):`)
     };
-    Logger.info(`\n${icons[iconType]} ${title} (${count} items):`);
+    console.log(`\n${sections[iconType]}`);
   }
 
   static totalSummary(total: number, create: number, update: number, skip: number): void {
-    Logger.info(`\n[TOTAL] Total: ${total} items (Create: ${create}, Update: ${update}, Skip: ${skip})`);
+    console.log(`\n${chalk.green(`[TOTAL] Total: ${total} items (Create: ${create}, Update: ${update}, Skip: ${skip})`)}`);
     Logger.separator();
   }
 
   // 矢印文字のヘルパーメソッド
   static getArrow(): string {
     return '->';
+  }
+
+  // diff専用のログメソッド
+  static diffCreate(message: string): void {
+    console.log(chalk.green(`  + ${message}`));
+  }
+
+  static diffUpdate(message: string): void {
+    console.log(chalk.green(`  ~ ${message}`));
+  }
+
+  static diffDelete(message: string): void {
+    console.log(chalk.red(`  - ${message}`));
+  }
+
+  static diffInfo(message: string): void {
+    console.log(`    ${message}`);
   }
 }

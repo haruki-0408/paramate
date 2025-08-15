@@ -22,6 +22,11 @@ export class CSVService {
         })
         .on('end', () => {
           try {
+            // 行数制限チェック
+            if (records.length > 500) {
+              throw new Error(`CSV file has too many rows: ${records.length} (max: 500). Consider splitting into multiple files.`);
+            }
+
             for (let i = 0; i < records.length; i++) {
               const record = records[i];
               const parameter = this.validateAndParseParameterRecord(record, i + 2); // +2 because line 1 is header
@@ -60,14 +65,24 @@ export class CSVService {
       throw new Error(`Line ${lineNumber}: Parameter name must start with '/': ${name}`);
     }
 
+    if (name.length > 500) {
+      throw new Error(`Line ${lineNumber}: Parameter name too long: ${name.length} characters (max: 500)`);
+    }
+
     if (!/^[a-zA-Z0-9_./-]*$/.test(name)) {
       throw new Error(`Line ${lineNumber}: Parameter name contains invalid characters: ${name}`);
     }
 
     // タイプのバリデーション
     const type = record.type?.trim() || 'String';
-    if (type !== 'String' && type !== 'SecureString') {
-      throw new Error(`Line ${lineNumber}: Invalid parameter type: ${type}. Must be 'String' or 'SecureString'`);
+    if (type !== 'String' && type !== 'SecureString' && type !== 'StringList') {
+      throw new Error(`Line ${lineNumber}: Invalid parameter type: ${type}. Must be 'String', 'SecureString', or 'StringList'`);
+    }
+
+    // 説明のバリデーション
+    const description = record.description?.trim();
+    if (description && description.length > 500) {
+      throw new Error(`Line ${lineNumber}: Parameter description too long: ${description.length} characters (max: 500)`);
     }
 
     // タグの解析
@@ -79,8 +94,8 @@ export class CSVService {
     return {
       name,
       value: record.value,
-      type: type as 'String' | 'SecureString',
-      description: record.description?.trim() || undefined,
+      type: type as 'String' | 'SecureString' | 'StringList',
+      description: description || undefined,
       kmsKeyId: record.kmsKeyId?.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined
     };
@@ -88,16 +103,29 @@ export class CSVService {
 
   private parseTags(tagsString: string, lineNumber: number): Array<{ key: string; value: string }> {
     try {
-      return tagsString.split(',').map(tag => {
+      const tags = tagsString.split(',').map(tag => {
         const [key, value] = tag.split('=');
-        if (!key || !value) {
+        if (!key || value === undefined) {
           throw new Error(`Invalid tag format: ${tag}`);
         }
-        return { key: key.trim(), value: value.trim() };
+        
+        const trimmedKey = key.trim();
+        const trimmedValue = value.trim();
+        
+        // タグキー・値の長さチェック
+        if (trimmedKey.length > 128) {
+          throw new Error(`Tag key too long: ${trimmedKey.length} characters (max: 128)`);
+        }
+        if (trimmedValue.length > 128) {
+          throw new Error(`Tag value too long: ${trimmedValue.length} characters (max: 128)`);
+        }
+        
+        return { key: trimmedKey, value: trimmedValue };
       });
+      
+      return tags;
     } catch (error) {
-      Logger.warning(`Line ${lineNumber}: Failed to parse tags: ${tagsString} - ignoring tags`);
-      return [];
+      throw new Error(`Line ${lineNumber}: ${error instanceof Error ? error.message : 'Failed to parse tags'}`);
     }
   }
 
@@ -221,7 +249,7 @@ export class CSVService {
           }
 
           const type = record.type?.trim() || 'String';
-          if (type !== 'String' && type !== 'SecureString') {
+          if (type !== 'String' && type !== 'SecureString' && type !== 'StringList') {
             errors.push(`Line ${lineNumber}: Invalid parameter type: ${type}`);
           }
         })

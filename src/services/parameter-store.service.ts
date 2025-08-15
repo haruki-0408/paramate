@@ -3,13 +3,15 @@ import {
   AddTagsToResourceCommand,
   GetParameterCommand,
   GetParametersByPathCommand,
+  ListTagsForResourceCommand,
   ParameterType,
   PutParameterCommand,
   SSMClient
 } from '@aws-sdk/client-ssm';
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { DiffResult, ExportOptions, Parameter, ParameterChange, ParameterFromStore, SyncOptions, SyncResult } from '../types';
 import { Logger } from '../utils/logger';
+import { AWSCredentials } from '../config/awsCredentials';
+import chalk from 'chalk';
 
 interface ExtendedAWSParameter extends AWSParameter {
   Description?: string;
@@ -19,15 +21,15 @@ interface ExtendedAWSParameter extends AWSParameter {
 export class ParameterStoreService {
   private ssmClient: SSMClient;
 
-  constructor(region?: string, profile?: string) {
-    const config = {
-      region: region || process.env.AWS_REGION || 'us-east-1',
-      credentials: fromNodeProviderChain({
-        profile
-      })
-    };
-
-    this.ssmClient = new SSMClient(config);
+  constructor(region?: string, profile?: string, config?: any) {
+    if (config) {
+      // 事前に認証済みの設定を使用
+      this.ssmClient = new SSMClient(config);
+    } else {
+      // 従来の方式
+      const awsConfig = AWSCredentials.createConfig({ region, profile });
+      this.ssmClient = new SSMClient(awsConfig);
+    }
   }
 
   async exportParameters(options: ExportOptions): Promise<ParameterFromStore[]> {
@@ -61,12 +63,12 @@ export class ParameterStoreService {
             const parameter: ParameterFromStore = {
               name: param.Name,
               value: param.Value,
-              type: (param.Type as 'String' | 'SecureString') || 'String',
+              type: (param.Type as 'String' | 'SecureString' | 'StringList') || 'String',
               description: extendedParam.Description,
               lastModifiedDate: param.LastModifiedDate,
               lastModifiedUser: extendedParam.LastModifiedUser,
               version: param.Version,
-              tags: [] // タグは別途取得が必要
+              tags: await this.getParameterTags(param.Name)
             };
 
             parameters.push(parameter);
@@ -98,12 +100,12 @@ export class ParameterStoreService {
         return {
           name: response.Parameter.Name || '',
           value: response.Parameter.Value || '',
-          type: (response.Parameter.Type as 'String' | 'SecureString') || 'String',
+          type: (response.Parameter.Type as 'String' | 'SecureString' | 'StringList') || 'String',
           description: extendedParam.Description,
           lastModifiedDate: response.Parameter.LastModifiedDate,
           lastModifiedUser: extendedParam.LastModifiedUser,
           version: response.Parameter.Version,
-          tags: []
+          tags: await this.getParameterTags(response.Parameter.Name!)
         };
       }
 
@@ -140,6 +142,29 @@ export class ParameterStoreService {
     } catch (error) {
       Logger.error(`Error updating parameter ${parameter.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
+    }
+  }
+
+  private async getParameterTags(parameterName: string): Promise<Array<{ key: string; value: string }>> {
+    try {
+      const command = new ListTagsForResourceCommand({
+        ResourceType: 'Parameter',
+        ResourceId: parameterName
+      });
+
+      const response = await this.ssmClient.send(command);
+      
+      if (response.TagList) {
+        return response.TagList.map(tag => ({
+          key: tag.Key || '',
+          value: tag.Value || ''
+        }));
+      }
+      
+      return [];
+    } catch (error) {
+      // タグ取得に失敗してもエラーとしない（権限問題等）
+      return [];
     }
   }
 
@@ -334,7 +359,7 @@ export class ParameterStoreService {
     if (skipChanges.length > 0) {
       Logger.diffSection('Skip', skipChanges.length, 'skip');
       skipChanges.forEach(change => {
-        Logger.info(`  = ${change.parameter.name} (no changes)`);
+        console.log(chalk.gray(`  = ${change.parameter.name} (no changes)`));
       });
     }
 
@@ -351,40 +376,46 @@ export class ParameterStoreService {
   }
 
   private logParameterDetails(param: Parameter, prefix: string): void {
-    Logger.info(`  ${prefix} ${param.name}`);
-    Logger.info(`    Value: ${this.maskValue(param.value)}`);
-    Logger.info(`    Type: ${param.type}`);
-    if (param.description) Logger.info(`    Description: ${param.description}`);
-    if (param.kmsKeyId) Logger.info(`    KMS: ${param.kmsKeyId}`);
+    if (prefix === '+') {
+      Logger.diffCreate(param.name);
+    } else if (prefix === '-') {
+      Logger.diffDelete(param.name);
+    } else {
+      Logger.diffUpdate(param.name);
+    }
+    Logger.diffInfo(`Value: ${this.maskValue(param.value)}`);
+    Logger.diffInfo(`Type: ${param.type}`);
+    if (param.description) Logger.diffInfo(`Description: ${param.description}`);
+    if (param.kmsKeyId) Logger.diffInfo(`KMS: ${param.kmsKeyId}`);
     if (param.tags && param.tags.length > 0) {
       const tagStr = param.tags.map(t => `${t.key}=${t.value}`).join(', ');
-      Logger.info(`    Tags: ${tagStr}`);
+      Logger.diffInfo(`Tags: ${tagStr}`);
     }
   }
 
   private logParameterChanges(parameter: Parameter, existing: ParameterFromStore): void {
-    Logger.info(`  ~ ${parameter.name}`);
+    Logger.diffUpdate(parameter.name);
 
     const arrow = Logger.getArrow();
     if (existing.value !== parameter.value) {
-      Logger.info(`    Value: ${this.maskValue(existing.value)} ${arrow} ${this.maskValue(parameter.value)}`);
+      Logger.diffInfo(`Value: ${this.maskValue(existing.value)} ${arrow} ${this.maskValue(parameter.value)}`);
     }
     if (existing.type !== parameter.type) {
-      Logger.info(`    Type: ${existing.type} ${arrow} ${parameter.type}`);
+      Logger.diffInfo(`Type: ${existing.type} ${arrow} ${parameter.type}`);
     }
 
     const existingDesc = existing.description || '';
     const newDesc = parameter.description || '';
     if (existingDesc !== newDesc) {
-      Logger.info(`    Description: ${existingDesc || '(not set)'} ${arrow} ${newDesc || '(not set)'}`);
+      Logger.diffInfo(`Description: ${existingDesc || '(not set)'} ${arrow} ${newDesc || '(not set)'}`);
     }
 
     if (parameter.kmsKeyId) {
-      Logger.info(`    KMS: ${parameter.kmsKeyId} (will be set)`);
+      Logger.diffInfo(`KMS: ${parameter.kmsKeyId} (will be set)`);
     }
     if (parameter.tags && parameter.tags.length > 0) {
       const tagStr = parameter.tags.map(t => `${t.key}=${t.value}`).join(', ');
-      Logger.info(`    Tags: ${tagStr} (will be set)`);
+      Logger.diffInfo(`Tags: ${tagStr} (will be set)`);
     }
   }
 }

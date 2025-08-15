@@ -6,8 +6,8 @@ export interface Parameter {
   name: string;
   /** パラメータ値 */
   value: string;
-  /** パラメータタイプ（String または SecureString） */
-  type: 'String' | 'SecureString';
+  /** パラメータタイプ（String、SecureString、または StringList） */
+  type: 'String' | 'SecureString' | 'StringList';
   /** パラメータの説明（オプション） */
   description?: string;
   /** KMS暗号化キーID（SecureString使用時） */
