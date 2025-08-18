@@ -10,83 +10,107 @@ import {
 } from '@aws-sdk/client-ssm';
 import { DiffResult, ExportOptions, Parameter, ParameterChange, ParameterFromStore, SyncOptions, SyncResult } from '../types';
 import { Logger } from '../utils/logger';
-import { AWSCredentials } from '../config/awsCredentials';
+import { AWS_LIMITS } from '../config/constants';
 import chalk from 'chalk';
 
+
 interface ExtendedAWSParameter extends AWSParameter {
-  Description?: string;
-  LastModifiedUser?: string;
+  Description?: string; // パラメータの説明文
+  LastModifiedUser?: string; // 最終更新ユーザー
 }
 
+/**
+ * AWS Parameter Storeとの連携を担当するサービスクラス
+ * パラメータの取得、更新、同期、差分計算機能を提供
+ * AWS SDK v3を使用してSSMサービスと通信
+ */
 export class ParameterStoreService {
-  private ssmClient: SSMClient;
+  private ssmClient: SSMClient; // AWS SSMクライアントのインスタンス
 
-  constructor(region?: string, profile?: string, config?: any) {
+  /**
+   * Parameter Store サービスのコンストラクタ
+   * AWS SSM クライアントを初期化し、認証情報を設定する
+   * @param region - AWS リージョン（オプション）
+   * @param profile - AWS プロファイル名（オプション）
+   * @param config - 事前設定済みのAWS設定オブジェクト（MFA認証済み等）
+   */
+  constructor(_region?: string, _profile?: string, config?: any) {
     if (config) {
-      // 事前に認証済みの設定を使用
+      // 事前に認証済みの設定オブジェクトを使用（MFA認証済み）
       this.ssmClient = new SSMClient(config);
     } else {
-      // 従来の方式
-      const awsConfig = AWSCredentials.createConfig({ region, profile });
-      this.ssmClient = new SSMClient(awsConfig);
+      // リージョンとプロファイルから新規に認証設定を作成（非推奨パス）
+      // 本来はcreateConfigWithContextを使用して事前に設定オブジェクトを作成することを推奨
+      throw new Error('ParameterStoreService requires pre-configured AWS config. Use AWSCredentials.createConfigWithContext() first.');
     }
   }
 
-  async exportParameters(options: ExportOptions): Promise<ParameterFromStore[]> {
+  /**
+   * Parameter Storeからパラメータを一括取得する
+   * 指定されたパスプレフィックス配下のパラメータを再帰的に取得し、
+   * 必要に応じて暗号化されたSecureStringも復号化して取得
+   * @param options - エクスポートオプション（パスプレフィックス、再帰取得、復号化等）
+   * @returns Parameter Storeから取得したパラメータ配列
+   */
+  public async exportParameters(options: ExportOptions): Promise<ParameterFromStore[]> {
     Logger.info('Fetching parameters from Parameter Store...');
 
     const parameters: ParameterFromStore[] = [];
-    let nextToken: string | undefined;
+    let nextToken: string | undefined; // ページネーション用のトークン
 
+    // AWS APIの制限によりページ分割で取得
     do {
       try {
         const command = new GetParametersByPathCommand({
-          Path: options.pathPrefix || '/',
-          Recursive: options.recursive !== false,
-          WithDecryption: options.decryptSecureStrings !== false,
-          NextToken: nextToken,
-          MaxResults: 10
+          Path: options.pathPrefix || '/', // 取得対象のパスプレフィックス
+          Recursive: options.recursive !== false, // 子パスも含めて再帰取得
+          WithDecryption: options.decryptSecureStrings !== false, // SecureStringの復号化
+          NextToken: nextToken, // 次ページ取得用のトークン
+          MaxResults: AWS_LIMITS.PARAMETER_STORE_MAX_RESULTS // 1回のAPIコールで取得する最大件数
         });
 
         const response = await this.ssmClient.send(command);
 
         if (response.Parameters) {
           for (const param of response.Parameters) {
+            // パラメータ名または値が空の場合はスキップ
             if (!param.Name || param.Value === undefined) continue;
 
-            // SecureStringを除外するオプション
+            // SecureStringパラメータを除外するオプションが有効な場合
             if (!options.includeSecureStrings && param.Type === 'SecureString') {
               continue;
             }
 
+            // AWS APIレスポンスを拡張インターフェースとしてキャスト
             const extendedParam = param as ExtendedAWSParameter;
             const parameter: ParameterFromStore = {
               name: param.Name,
-              value: param.Value,
+              value: param.Value || '',
               type: (param.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-              description: extendedParam.Description,
-              lastModifiedDate: param.LastModifiedDate,
-              lastModifiedUser: extendedParam.LastModifiedUser,
-              version: param.Version,
-              tags: await this.getParameterTags(param.Name)
+              description: extendedParam.Description || '',
+              kmsKeyId: '', // GetParametersByPathCommandでは取得できないため空文字
+              lastModifiedDate: param.LastModifiedDate || new Date(),
+              lastModifiedUser: extendedParam.LastModifiedUser || '',
+              version: param.Version || 1,
+              tags: await this.getParameterTags(param.Name) // 別APIでタグ情報を取得
             };
 
             parameters.push(parameter);
           }
         }
 
-        nextToken = response.NextToken;
+        nextToken = response.NextToken; // 次ページがある場合のトークンを保存
       } catch (error) {
         Logger.error(`Error fetching parameters: ${error instanceof Error ? error.message : 'Unknown error'}`);
         throw error;
       }
-    } while (nextToken);
+    } while (nextToken); // 次ページがある限り継続
 
     Logger.success(`Retrieved ${parameters.length} parameters`);
     return parameters;
   }
 
-  async getParameter(name: string, withDecryption: boolean = true): Promise<ParameterFromStore | null> {
+  public async getParameter(name: string, withDecryption: boolean = true): Promise<ParameterFromStore | null> {
     try {
       const command = new GetParameterCommand({
         Name: name,
@@ -101,10 +125,11 @@ export class ParameterStoreService {
           name: response.Parameter.Name || '',
           value: response.Parameter.Value || '',
           type: (response.Parameter.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-          description: extendedParam.Description,
-          lastModifiedDate: response.Parameter.LastModifiedDate,
-          lastModifiedUser: extendedParam.LastModifiedUser,
-          version: response.Parameter.Version,
+          description: extendedParam.Description || '',
+          kmsKeyId: '',
+          lastModifiedDate: response.Parameter.LastModifiedDate || new Date(),
+          lastModifiedUser: extendedParam.LastModifiedUser || '',
+          version: response.Parameter.Version || 1,
           tags: await this.getParameterTags(response.Parameter.Name!)
         };
       }
@@ -118,7 +143,7 @@ export class ParameterStoreService {
     }
   }
 
-  async putParameter(parameter: Parameter, overwrite: boolean = false): Promise<void> {
+  public async putParameter(parameter: Parameter, overwrite: boolean = false): Promise<void> {
     try {
       const command = new PutParameterCommand({
         Name: parameter.name,
@@ -182,7 +207,7 @@ export class ParameterStoreService {
     }
   }
 
-  async syncParameters(parameters: Parameter[], options: SyncOptions): Promise<SyncResult> {
+  public async syncParameters(parameters: Parameter[], options: SyncOptions): Promise<SyncResult> {
     const result: SyncResult = {
       success: 0,
       failed: 0,
@@ -254,7 +279,7 @@ export class ParameterStoreService {
     return result;
   }
 
-  async calculateDiff(parameters: Parameter[]): Promise<DiffResult> {
+  public async calculateDiff(parameters: Parameter[]): Promise<DiffResult> {
     const changes: ParameterChange[] = [];
     const summary = { create: 0, update: 0, delete: 0, skip: 0 };
 
@@ -263,17 +288,17 @@ export class ParameterStoreService {
         const existing = await this.getParameter(parameter.name);
 
         if (!existing) {
-          changes.push({ type: 'create', parameter });
+          changes.push({ type: 'create', parameter, existing: null, reason: 'Parameter does not exist' });
           summary.create++;
         } else if (this.isParameterIdentical(existing, parameter)) {
           changes.push({ type: 'skip', parameter, existing, reason: 'No changes' });
           summary.skip++;
         } else {
-          changes.push({ type: 'update', parameter, existing });
+          changes.push({ type: 'update', parameter, existing, reason: 'Parameter values differ' });
           summary.update++;
         }
       } catch (error) {
-        changes.push({ type: 'create', parameter });
+        changes.push({ type: 'create', parameter, existing: null, reason: 'Error retrieving existing parameter' });
         summary.create++;
       }
     }
@@ -333,7 +358,7 @@ export class ParameterStoreService {
     });
   }
 
-  displayDiffSummary(diffResult: DiffResult): void {
+  public displayDiffSummary(diffResult: DiffResult): void {
     Logger.header('Change Preview');
 
     const createChanges = diffResult.changes.filter(c => c.type === 'create');
@@ -396,18 +421,17 @@ export class ParameterStoreService {
   private logParameterChanges(parameter: Parameter, existing: ParameterFromStore): void {
     Logger.diffUpdate(parameter.name);
 
-    const arrow = Logger.getArrow();
     if (existing.value !== parameter.value) {
-      Logger.diffInfo(`Value: ${this.maskValue(existing.value)} ${arrow} ${this.maskValue(parameter.value)}`);
+      Logger.diffInfo(`Value: ${this.maskValue(existing.value)} -> ${this.maskValue(parameter.value)}`);
     }
     if (existing.type !== parameter.type) {
-      Logger.diffInfo(`Type: ${existing.type} ${arrow} ${parameter.type}`);
+      Logger.diffInfo(`Type: ${existing.type} -> ${parameter.type}`);
     }
 
     const existingDesc = existing.description || '';
     const newDesc = parameter.description || '';
     if (existingDesc !== newDesc) {
-      Logger.diffInfo(`Description: ${existingDesc || '(not set)'} ${arrow} ${newDesc || '(not set)'}`);
+      Logger.diffInfo(`Description: ${existingDesc || '(not set)'} -> ${newDesc || '(not set)'}`);
     }
 
     if (parameter.kmsKeyId) {

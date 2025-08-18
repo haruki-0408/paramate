@@ -4,11 +4,27 @@ import csvParser from 'csv-parser';
 import { createObjectCsvWriter } from 'csv-writer';
 import { CSVRecord, Parameter, ParameterFromStore, TemplateOptions } from '../types';
 import { Logger } from '../utils/logger';
+import { ValidationUtils } from '../utils/validation';
 
+/**
+ * CSVファイルとAWS Parameter Store間のデータ変換を担当するサービスクラス
+ * CSVファイルの読み込み、書き出し、バリデーション機能を提供
+ */
 export class CSVService {
-  async parseParametersFromCSV(filePath: string): Promise<Parameter[]> {
+  /**
+   * CSVファイルからパラメータ一覧を読み込み、Parameterオブジェクトの配列として返す
+   * ファイルパスのセキュリティ検証とデータバリデーションを実行
+   */
+  public async parseParametersFromCSV(filePath: string): Promise<Parameter[]> {
+    // ファイルパスのセキュリティ検証（パストラバーサル攻撃対策）
+    const pathValidation = ValidationUtils.validateFilePath(filePath);
+    if (!pathValidation.isValid) {
+      throw new Error(`Invalid file path: ${pathValidation.error}`);
+    }
+
+    // ファイルの存在チェック
     if (!fs.existsSync(filePath)) {
-      throw new Error(`CSV file not found: ${filePath}`);
+      throw new Error(`CSV file not found at path: ${filePath}`);
     }
 
     const parameters: Parameter[] = [];
@@ -23,113 +39,51 @@ export class CSVService {
         .on('end', () => {
           try {
             // 行数制限チェック
-            if (records.length > 500) {
-              throw new Error(`CSV file has too many rows: ${records.length} (max: 500). Consider splitting into multiple files.`);
+            const rowCountValidation = ValidationUtils.validateRowCount(records.length);
+            if (!rowCountValidation.isValid) {
+              throw new Error(rowCountValidation.error);
             }
 
             for (let i = 0; i < records.length; i++) {
               const record = records[i];
-              const parameter = this.validateAndParseParameterRecord(record, i + 2); // +2 because line 1 is header
-              if (parameter) {
-                parameters.push(parameter);
+              const validation = ValidationUtils.validateCSVRecord(record, i + 2); // +2 because line 1 is header
+              
+              if (!validation.isValid) {
+                throw new Error(validation.errors.join('; '));
+              }
+              
+              if (validation.parameter) {
+                const param: Parameter = {
+                  name: validation.parameter.name,
+                  value: validation.parameter.value,
+                  type: validation.parameter.type,
+                  description: validation.parameter.description || '',
+                  kmsKeyId: validation.parameter.kmsKeyId || '',
+                  tags: validation.parameter.tags || []
+                };
+                parameters.push(param);
               }
             }
 
-            Logger.info(`Read ${parameters.length} parameters from CSV`);
+            Logger.info(`Successfully parsed ${parameters.length} parameters from CSV file`);
             resolve(parameters);
           } catch (error) {
             reject(error);
           }
         })
         .on('error', (error: Error) => {
-          reject(new Error(`CSV read error: ${error.message}`));
+          reject(new Error(`Failed to read CSV file: ${error.message}`));
         });
     });
   }
 
-  private validateAndParseParameterRecord(record: CSVRecord, lineNumber: number): Parameter | null {
-    // 必須フィールドのチェック
-    if (!record.name || record.name.trim() === '') {
-      Logger.warning(`Line ${lineNumber}: Parameter name is empty - skipping`);
-      return null;
+
+  public async exportParametersToCSV(parameters: ParameterFromStore[], outputFile: string): Promise<void> {
+    // 出力ファイルパスのセキュリティ検証
+    const pathValidation = ValidationUtils.validateFilePath(outputFile);
+    if (!pathValidation.isValid) {
+      throw new Error(`Invalid output file path: ${pathValidation.error}`);
     }
-
-    if (!record.value && record.value !== '') {
-      Logger.warning(`Line ${lineNumber}: Value is empty - skipping`);
-      return null;
-    }
-
-    // パラメータ名のバリデーション
-    const name = record.name.trim();
-    if (!name.startsWith('/')) {
-      throw new Error(`Line ${lineNumber}: Parameter name must start with '/': ${name}`);
-    }
-
-    if (name.length > 500) {
-      throw new Error(`Line ${lineNumber}: Parameter name too long: ${name.length} characters (max: 500)`);
-    }
-
-    if (!/^[a-zA-Z0-9_./-]*$/.test(name)) {
-      throw new Error(`Line ${lineNumber}: Parameter name contains invalid characters: ${name}`);
-    }
-
-    // タイプのバリデーション
-    const type = record.type?.trim() || 'String';
-    if (type !== 'String' && type !== 'SecureString' && type !== 'StringList') {
-      throw new Error(`Line ${lineNumber}: Invalid parameter type: ${type}. Must be 'String', 'SecureString', or 'StringList'`);
-    }
-
-    // 説明のバリデーション
-    const description = record.description?.trim();
-    if (description && description.length > 500) {
-      throw new Error(`Line ${lineNumber}: Parameter description too long: ${description.length} characters (max: 500)`);
-    }
-
-    // タグの解析
-    let tags: Array<{ key: string; value: string }> = [];
-    if (record.tags && record.tags.trim() !== '') {
-      tags = this.parseTags(record.tags, lineNumber);
-    }
-
-    return {
-      name,
-      value: record.value,
-      type: type as 'String' | 'SecureString' | 'StringList',
-      description: description || undefined,
-      kmsKeyId: record.kmsKeyId?.trim() || undefined,
-      tags: tags.length > 0 ? tags : undefined
-    };
-  }
-
-  private parseTags(tagsString: string, lineNumber: number): Array<{ key: string; value: string }> {
-    try {
-      const tags = tagsString.split(',').map(tag => {
-        const [key, value] = tag.split('=');
-        if (!key || value === undefined) {
-          throw new Error(`Invalid tag format: ${tag}`);
-        }
-        
-        const trimmedKey = key.trim();
-        const trimmedValue = value.trim();
-        
-        // タグキー・値の長さチェック
-        if (trimmedKey.length > 128) {
-          throw new Error(`Tag key too long: ${trimmedKey.length} characters (max: 128)`);
-        }
-        if (trimmedValue.length > 128) {
-          throw new Error(`Tag value too long: ${trimmedValue.length} characters (max: 128)`);
-        }
-        
-        return { key: trimmedKey, value: trimmedValue };
-      });
-      
-      return tags;
-    } catch (error) {
-      throw new Error(`Line ${lineNumber}: ${error instanceof Error ? error.message : 'Failed to parse tags'}`);
-    }
-  }
-
-  async exportParametersToCSV(parameters: ParameterFromStore[], outputFile: string): Promise<void> {
     const csvWriter = createObjectCsvWriter({
       path: outputFile,
       header: [
@@ -148,19 +102,25 @@ export class CSVService {
       name: param.name,
       value: param.value,
       type: param.type,
-      description: param.description || '',
-      kmsKeyId: param.kmsKeyId || '',
-      tags: param.tags ? param.tags.map(t => `${t.key}=${t.value}`).join(',') : '',
-      lastModifiedDate: param.lastModifiedDate ? param.lastModifiedDate.toISOString() : '',
-      version: param.version?.toString() || ''
+      description: param.description,
+      kmsKeyId: param.kmsKeyId,
+      tags: param.tags.map(t => `${t.key}=${t.value}`).join(','),
+      lastModifiedDate: param.lastModifiedDate.toISOString(),
+      version: param.version.toString()
     }));
 
     await csvWriter.writeRecords(records);
-    Logger.success(`Exported ${parameters.length} parameters to CSV file: ${outputFile}`);
+    Logger.success(`Successfully exported ${parameters.length} parameters to CSV file: ${outputFile}`);
   }
 
-  async generateTemplate(outputPath: string, options: TemplateOptions = {}): Promise<void> {
+  public async generateTemplate(outputPath: string, options: TemplateOptions = {}): Promise<void> {
     const templatePath = options.outputPath || outputPath;
+    
+    // テンプレートファイルパスのセキュリティ検証
+    const pathValidation = ValidationUtils.validateFilePath(templatePath);
+    if (!pathValidation.isValid) {
+      throw new Error(`Invalid template file path: ${pathValidation.error}`);
+    }
 
     // ディレクトリが存在しない場合は作成
     const dir = path.dirname(templatePath);
@@ -180,7 +140,7 @@ export class CSVService {
       ]
     });
 
-    const sampleRecords = options.includeExamples ? [
+    const sampleRecords = (options.includeExamples !== false) ? [
       {
         name: '/myapp/database/host',
         value: 'localhost',
@@ -217,17 +177,24 @@ export class CSVService {
     ];
 
     await csvWriter.writeRecords(sampleRecords);
-    Logger.success(`Generated CSV template: ${templatePath}`);
+    Logger.success(`Successfully generated CSV template: ${templatePath}`);
   }
 
-  validateCSVFile(filePath: string): Promise<{ isValid: boolean; errors: string[] }> {
+  public validateCSVFile(filePath: string): Promise<{ isValid: boolean; errors: string[] }> {
     return new Promise((resolve) => {
       const errors: string[] = [];
       const records: CSVRecord[] = [];
       let lineNumber = 1;
 
+      // ファイルパスのセキュリティ検証
+      const pathValidation = ValidationUtils.validateFilePath(filePath);
+      if (!pathValidation.isValid) {
+        resolve({ isValid: false, errors: [`Invalid file path: ${pathValidation.error}`] });
+        return;
+      }
+
       if (!fs.existsSync(filePath)) {
-        resolve({ isValid: false, errors: [`File does not exist: ${filePath}`] });
+        resolve({ isValid: false, errors: [`CSV file not found at path: ${filePath}`] });
         return;
       }
 
@@ -237,27 +204,23 @@ export class CSVService {
           lineNumber++;
           records.push(record);
 
-          // 基本バリデーション
-          if (!record.name || record.name.trim() === '') {
-            errors.push(`Line ${lineNumber}: Parameter name is empty`);
-          } else if (!record.name.startsWith('/')) {
-            errors.push(`Line ${lineNumber}: Parameter name must start with '/': ${record.name}`);
-          }
-
-          if (!record.value && record.value !== '') {
-            errors.push(`Line ${lineNumber}: Value is empty`);
-          }
-
-          const type = record.type?.trim() || 'String';
-          if (type !== 'String' && type !== 'SecureString' && type !== 'StringList') {
-            errors.push(`Line ${lineNumber}: Invalid parameter type: ${type}`);
+          // 共有バリデーションロジックを使用
+          const validation = ValidationUtils.validateCSVRecord(record, lineNumber);
+          if (!validation.isValid) {
+            errors.push(...validation.errors);
           }
         })
         .on('end', () => {
+          // 行数制限チェック
+          const rowCountValidation = ValidationUtils.validateRowCount(records.length);
+          if (!rowCountValidation.isValid) {
+            errors.push(rowCountValidation.error);
+          }
+
           resolve({ isValid: errors.length === 0, errors });
         })
         .on('error', (error: Error) => {
-          resolve({ isValid: false, errors: [`CSV read error: ${error.message}`] });
+          resolve({ isValid: false, errors: [`Failed to read CSV file: ${error.message}`] });
         });
     });
   }

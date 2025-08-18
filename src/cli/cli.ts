@@ -7,6 +7,7 @@ import { CSVService } from '../services/csv.service';
 import { Logger } from '../utils/logger';
 import { AWSCredentials } from '../config/awsCredentials';
 import { ExportOptions, SyncOptions } from '../types';
+import { FILE_PATHS } from '../config/constants';
 
 interface CliSyncOptions {
   file: string;
@@ -44,7 +45,7 @@ interface CliDiffOptions {
 const program = new Command();
 
 program
-  .name('smc')
+  .name('scm')
   .description('Tool to sync parameters between AWS Parameter Store and CSV files')
   .version('1.1.0');
 
@@ -196,7 +197,7 @@ program
 program
   .command('generate-template')
   .description('Generate CSV template file')
-  .option('-o, --output <path>', 'Output path for template file', './sample_template.csv')
+  .option('-o, --output <path>', 'Output path for template file', `./${FILE_PATHS.DEFAULT_TEMPLATE_NAME}`)
   .option('--no-examples', 'Do not include sample data')
   .action(async (options: CliGenerateOptions) => {
     try {
@@ -211,8 +212,8 @@ program
       Logger.success('Template generation completed');
       Logger.info('\nUsage:');
       Logger.info(`1. Edit ${outputPath} to define parameters`);
-      Logger.info(`2. smc sync -f ${outputPath} --dry-run to preview`);
-      Logger.info(`3. smc sync -f ${outputPath} to execute`);
+      Logger.info(`2. scm sync -f ${outputPath} --dry-run to preview`);
+      Logger.info(`3. scm sync -f ${outputPath} to execute`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Logger.error(`Template generation failed: ${errorMessage}`);
@@ -270,7 +271,15 @@ program
       
       Logger.info(`Calculating differences: ${options.file}`);
 
+      // CSVファイルのバリデーション
       const csvService = new CSVService();
+      const validation = await csvService.validateCSVFile(options.file);
+      if (!validation.isValid) {
+        Logger.error('CSV file has errors:');
+        validation.errors.forEach(error => Logger.error(`  - ${error}`));
+        process.exit(1);
+      }
+
       const parameters = await csvService.parseParametersFromCSV(options.file);
 
       if (parameters.length === 0) {
@@ -288,7 +297,7 @@ program
       } else {
         const regionArg = options.region ? `-r ${options.region}` : '';
         const profileArg = options.profile ? `-p ${options.profile}` : '';
-        const cmd = `smc sync -f ${options.file} ${regionArg} ${profileArg}`.replace(/\s+/g, ' ').trim();
+        const cmd = `scm sync -f ${options.file} ${regionArg} ${profileArg}`.replace(/\s+/g, ' ').trim();
         Logger.info(`\nSync command: ${cmd}`);
       }
     } catch (error) {

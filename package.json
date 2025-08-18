@@ -4,13 +4,15 @@
   "description": "AWS Parameter StoreとCSVファイル間でパラメータを同期するCLIツール",
   "main": "dist/index.js",
   "bin": {
-    "smc": "dist/cli/cli.js"
+    "scm": "dist/cli/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli/cli.js",
     "dev": "ts-node src/cli/cli.ts",
     "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts --fix",
@@ -27,7 +29,7 @@
     "cli",
     "typescript"
   ],
-  "author": "Asano Haruki <asano.haruki@example.com>",
+  "author": "a3a",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -40,7 +42,9 @@
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.700.0",
     "@aws-sdk/client-sts": "^3.700.0",
+    "@aws-sdk/config-resolver": "^3.370.0",
     "@aws-sdk/credential-providers": "^3.844.0",
+    "@aws-sdk/node-config-provider": "^3.370.0",
     "chalk": "^4.1.2",
     "commander": "^12.0.0",
     "csv-parser": "^3.0.0",
