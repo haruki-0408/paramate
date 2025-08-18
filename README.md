@@ -23,112 +23,161 @@
 
 </div>
 
-AWS Parameter StoreとCSVファイル間でパラメータを双方向同期するCLIツールです。
-
-## 主な機能
-
-- **双方向同期**: CSV -> AWS Parameter Storeへのデータ同期
-- **エクスポート**: Parameter StoreからCSVファイルへのデータ抽出
-- **バリデーション**: CSV形式とデータ内容の詳細チェック
-- **差分表示**: 現在の状態との差分をプレビュー表示
-- **ドライラン実行**: 変更を適用せずに実行結果をプレビュー
-- **テンプレート生成**: CSVテンプレートの自動生成
+**AWS Parameter StoreとCSVファイル間でパラメータを同期するCLIツール**
 
 ## インストール
 
-### NPMからのインストール
 ```bash
+# NPMから全体インストール
 npm install -g syncmate
+
+# 動作確認
+scm --version
 ```
-
-### ソースからのビルド
-```bash
-git clone https://github.com/asano-haruki/syncmate.git
-cd syncmate
-npm install
-npm run build
-npm link
-```
-
-## コマンド一覧
-
-| コマンド | 説明 | 主な用途 |
-|---------|------|---------|
-| `scm sync` | CSVからParameter Storeへ同期 | パラメータのアップロード |
-| `scm export` | Parameter StoreからCSVへエクスポート | 既存パラメータの取得 |
-| `scm diff` | CSV内容との差分表示 | 変更前の確認 |
-| `scm validate` | CSVファイルの形式チェック | データ検証 |
-| `scm generate-template` | CSVテンプレート生成 | 初回セットアップ |
 
 ## 基本的な使い方
 
-### 1. テンプレート生成
+### 1. テンプレート生成と初期設定
 ```bash
-# CSVテンプレートを生成
-scm generate-template -o parameters.csv
+# CSVテンプレート生成（サンプルデータ付き）
+scm generate-template -o my-parameters.csv
 
-# サンプルデータなしで生成
-scm generate-template -o parameters.csv --no-examples
+# CSVファイルを編集してパラメータを定義
+# エディタでmy-parameters.csvを開いて必要なパラメータを設定
 ```
 
-### 2. パラメータ同期
+### 2. データ同期の基本フロー
 ```bash
-# CSVからParameter Storeへ同期
-scm sync -f parameters.csv
+# ファイル検証
+scm validate -f my-parameters.csv
 
-# ドライラン（プレビューのみ）
-scm sync -f parameters.csv --dry-run
+# 差分プレビュー
+scm diff -f my-parameters.csv
 
-# AWSプロファイル・リージョン指定
-scm sync -f parameters.csv -r us-west-2 -p production
+# テスト実行（実際には変更しない）
+scm sync -f my-parameters.csv --dry-run
+
+# 実際の同期実行
+scm sync -f my-parameters.csv
 ```
 
-### 3. エクスポート
+### 3. データ取得
 ```bash
-# Parameter StoreからCSV出力
-scm export --path-prefix /app/ -o exported.csv
+# Parameter Storeから現在の設定をCSV出力
+scm export -o current-settings.csv
 
-# 特定パスの再帰検索
-scm export --path-prefix /prod/ --output production.csv
+# 特定パスのみエクスポート
+scm export --path-prefix /myapp/ -o myapp-settings.csv
 ```
 
-### 4. 差分確認
-```bash
-# CSV内容と現在の状態を比較
-scm diff -f parameters.csv
+## コマンドリファレンス
 
-# 特定のAWS環境と比較
-scm diff -f parameters.csv -r us-east-1 -p dev
+### `scm sync` - データ同期
+**CSVファイルからParameter Storeへパラメータを同期**
+
+```bash
+scm sync -f <csv-file> [オプション]
 ```
 
-### 5. バリデーション
+**主要オプション：**
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `-f, --file` | CSVファイルパス（必須） | `-f parameters.csv` |
+| `--dry-run` | テスト実行（変更なし） | `--dry-run` |
+| `-r, --region` | AWSリージョン指定 | `-r ap-northeast-1` |
+| `-p, --profile` | AWSプロファイル指定 | `-p production` |
+| `--path-prefix` | パス絞り込み | `--path-prefix /myapp/` |
+
+### `scm export` - データ取得
+**Parameter StoreからCSVファイルへデータを取得**
+
 ```bash
-# CSVファイルの形式チェック
-scm validate -f parameters.csv
+scm export [オプション] -o <output-file>
 ```
 
-## CSVファイル形式
+**主要オプション：**
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `-o, --output` | 出力CSVファイルパス（必須） | `-o exported.csv` |
+| `--path-prefix` | 取得パス指定 | `--path-prefix /prod/` |
+| `--no-secure-strings` | SecureStringを除外 | `--no-secure-strings` |
+| `--no-decrypt` | 暗号化値のまま取得 | `--no-decrypt` |
+| `-r, --region` | AWSリージョン指定 | `-r us-west-2` |
 
-### 必須列
-| 列名 | 必須 | 説明 | 例 |
-|------|------|------|-----|
-| `name` | ✓ | パラメータ名（/で開始） | `/app/database/host` |
-| `value` | ✓ | パラメータ値 | `localhost` |
-| `type` | - | パラメータタイプ | `String`, `SecureString`, `StringList` |
-| `description` | - | 説明文 | `データベースホスト名` |
+### `scm diff` - 差分確認
+**CSVファイルと現在のParameter Storeの差分表示**
 
-### 重要な注意点
-- パラメータ名は `/` で始まる必要があります
-- `type` は `String` または `SecureString`（デフォルト: `String`）
-- `SecureString` はKMS暗号化されて保存されます
+```bash
+scm diff -f <csv-file> [オプション]
+```
+
+### `scm validate` - ファイル検証
+**CSVファイルの形式とデータをチェック**
+
+```bash
+scm validate -f <csv-file>
+```
+
+### `scm generate-template` - テンプレート生成
+**サンプルCSVファイルを生成**
+
+```bash
+scm generate-template -o <output-file> [オプション]
+```
+
+**オプション：**
+| オプション | 説明 |
+|-----------|------|
+| `--no-examples` | サンプルデータなしで生成 |
+
+## CSVファイル仕様
+
+### 列定義
+| 列名 | 必須 | 説明 | 制限 |
+|------|:----:|------|------|
+| `name` | ✓ | パラメータ名 | `/`で開始、最大500文字 |
+| `value` | ✓ | パラメータ値 | 空文字不可 |
+| `type` | - | データタイプ | `String`/`SecureString`/`StringList` |
+| `description` | - | 説明文 | 最大500文字 |
+| `kmsKeyId` | - | KMS暗号化キーID | SecureString使用時 |
+| `tags` | - | タグ | `key1=value1;key2=value2` 形式 |
+
+### サンプルCSV
+```csv
+name,value,type,description,kmsKeyId,tags
+/myapp/db/host,database.example.com,String,データベースホスト名,,env=prod;component=db
+/myapp/db/password,secretpass123,SecureString,DB接続パスワード,alias/myapp-key,env=prod;component=db
+/myapp/api/endpoints,"api1.com;api2.com;api3.com",StringList,API接続先一覧,,env=prod;component=api
+```
+
+## データ同期仕様
+
+### 同期動作
+- **新規パラメータ**: Parameter Storeに作成
+- **既存パラメータ**: 値が異なる場合のみ更新
+- **同一パラメータ**: スキップ（変更なし）
+- **タグ**: パラメータ作成・更新時に自動設定
+
+### 安全機能
+- **ドライラン**: `--dry-run`で実際の変更前にプレビュー可能
+- **バリデーション**: CSVファイルの事前検証で不正データを防止
+- **差分表示**: 変更内容を事前確認
+- **行数制限**: CSVファイルは最大500行まで
+
+### AWS認証とリージョン解決
+**認証情報の優先順位：**
+1. コマンドオプション（`-p profile`）
+2. 環境変数（`AWS_PROFILE`, `AWS_ACCESS_KEY_ID`）
+3. `~/.aws/credentials`のdefaultプロファイル
+4. IAMロール（EC2/Lambda実行時）
+
+**リージョン解決順位：**
+1. コマンドオプション（`-r region`）
+2. 環境変数（`AWS_REGION`, `AWS_DEFAULT_REGION`）
+3. `~/.aws/config`の設定
+4. デフォルト：`us-east-1`
 
 ## AWS設定
-
-### 認証情報の設定方法
-1. **AWS CLI**: `aws configure` で設定
-2. **環境変数**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
-3. **IAMロール**: EC2インスタンスまたはLambda関数で使用
-4. **プロファイル**: `~/.aws/credentials` の名前付きプロファイル
 
 ### 必要なIAM権限
 ```json
@@ -139,7 +188,7 @@ scm validate -f parameters.csv
       "Effect": "Allow",
       "Action": [
         "ssm:GetParameter",
-        "ssm:GetParameters",
+        "ssm:GetParameters", 
         "ssm:GetParametersByPath",
         "ssm:PutParameter",
         "ssm:AddTagsToResource"
@@ -150,89 +199,68 @@ scm validate -f parameters.csv
 }
 ```
 
-SecureString使用時は、追加でKMS権限も必要:
+**SecureString使用時の追加権限：**
 ```json
 {
   "Effect": "Allow",
-  "Action": [
-    "kms:Decrypt",
-    "kms:Encrypt"
-  ],
+  "Action": ["kms:Encrypt", "kms:Decrypt"],
   "Resource": "arn:aws:kms:*:*:key/*"
 }
 ```
 
-## 使用例
-
-### 基本的なワークフロー
+### AWS認証情報設定
 ```bash
-# 1. CSVテンプレート生成
-scm generate-template -o parameters.csv
+# AWS CLIでプロファイル設定
+aws configure --profile myproject
 
-# 2. CSVファイルを編集してパラメータを定義
-# （エディタでparameters.csvを編集）
-
-# 3. ファイル形式の検証
-scm validate -f parameters.csv
-
-# 4. 変更内容の確認
-scm diff -f parameters.csv
-
-# 5. ドライラン実行
-scm sync -f parameters.csv --dry-run
-
-# 6. 実際の同期実行
-scm sync -f parameters.csv
+# 環境変数での設定
+export AWS_PROFILE=myproject
+export AWS_REGION=ap-northeast-1
 ```
 
-### Parameter Storeからのエクスポート
-```bash
-# 全パラメータをエクスポート
-scm export -o current-parameters.csv
+## 注意事項・制限事項
 
-# 特定パスのパラメータのみエクスポート
-scm export --path-prefix /app/ -o app-parameters.csv
+### セキュリティ
+- **SecureString**: KMS暗号化でParameter Storeに保存
+- **ログ出力**: パスワードなどの機密情報はマスク表示
+- **ファイルアクセス**: パストラバーサル攻撃対策済み
 
-# SecureStringを除外してエクスポート
-scm export --no-secure-strings -o public-parameters.csv
-```
+### データ制限
+- **CSVファイル**: 最大500行
+- **パラメータ名**: 最大500文字、`/`で開始必須
+- **パラメータ値**: 空文字不可
+- **説明文**: 最大500文字
+- **タグ**: キー・値ともに最大128文字
 
-### オプション使用法
-```bash
-# 特定のAWSプロファイル使用
-scm sync -f parameters.csv --profile my-profile
-
-# 特定のリージョン指定
-scm sync -f parameters.csv --region us-west-2
-
-# パスフィルタリング
-scm sync -f parameters.csv --path-prefix /app/database/
-```
+### 互換性
+- **Node.js**: v16.0.0以上
+- **AWS SDK**: v3系使用
+- **OS**: Windows, macOS, Linux対応
 
 ## トラブルシューティング
 
-### よくあるエラーと対処法
+### よくあるエラー
+| エラーメッセージ | 原因 | 解決方法 |
+|----------------|------|----------|
+| `Access Denied` | IAM権限不足 | 必要なSSM・KMS権限を付与 |
+| `Parameter name must start with /` | パラメータ名形式エラー | CSV内のnameを`/`で開始 |
+| `CSV file exceeds maximum row limit` | 行数制限超過 | CSVを500行以下に分割 |
+| `Could not load credentials` | AWS認証エラー | プロファイル設定や環境変数確認 |
 
-| エラー | 原因 | 対処法 |
-|-------|------|--------|
-| `Access Denied` | IAM権限不足 | 必要な権限をIAMポリシーに追加 |
-| `Invalid parameter name` | パラメータ名が`/`で始まっていない | CSVでパラメータ名を修正 |
-| `CSV parsing error` | CSV形式が不正 | `scm validate`で詳細確認 |
-| `Region not found` | 無効なリージョン指定 | `--region`オプションで正しいリージョンを指定 |
-
-### デバッグ方法
+### デバッグコマンド
 ```bash
-# AWS認証情報確認
-aws sts get-caller-identity --profile your-profile
+# AWS認証確認
+aws sts get-caller-identity
+
+# 設定ファイル確認  
+cat ~/.aws/config
+cat ~/.aws/credentials
 
 # 詳細ログ出力
 export DEBUG=1
-scm sync -f parameters.csv
-
-# ドライランで事前確認
 scm sync -f parameters.csv --dry-run
 ```
 
 ## ライセンス
 
-MIT License - [LICENSE](LICENSE)ファイルをご確認ください。
+MIT License
