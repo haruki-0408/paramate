@@ -158,12 +158,12 @@ export class CSVService {
         tags: 'Environment=dev,Project=myapp'
       },
       {
-        name: '/myapp/api/key',
-        value: 'api-key-12345',
-        type: 'SecureString',
-        description: 'External API key',
+        name: '/myapp/api/endpoints',
+        value: 'api1.example.com;api2.example.com;api3.example.com',
+        type: 'StringList',
+        description: 'List of API endpoints',
         kmsKeyId: '',
-        tags: 'Environment=dev,Project=myapp,Type=secret'
+        tags: 'Environment=dev,Project=myapp,Type=endpoints'
       }
     ] : [
       {
