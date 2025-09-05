@@ -38,18 +38,30 @@ describe('ParameterStoreService', () => {
    */
   describe('getParameter', () => {
     it('パラメータが見つかった場合に正しく返すこと', async () => {
-      const mockResponse = {
+      const mockGetParameterResponse = {
         Parameter: {
           Name: '/app/test',
           Value: 'test-value',
           Type: 'String',
-          Description: 'Test parameter',
           LastModifiedDate: new Date('2023-01-01'),
           Version: 1
         }
       };
 
-      mockSSMClient.send = jest.fn().mockResolvedValue(mockResponse);
+      const mockDescribeParametersResponse = {
+        Parameters: [{
+          Name: '/app/test',
+          Description: 'Test parameter'
+        }]
+      };
+
+      const mockTagsResponse = { TagList: [] };
+
+      // GetParameterCommand, DescribeParametersCommand, ListTagsForResourceCommandの順で呼び出される
+      mockSSMClient.send = jest.fn()
+        .mockResolvedValueOnce(mockGetParameterResponse)
+        .mockResolvedValueOnce(mockDescribeParametersResponse)
+        .mockResolvedValueOnce(mockTagsResponse);
 
       const result = await parameterStoreService.getParameter('/app/test');
 
@@ -98,7 +110,6 @@ describe('ParameterStoreService', () => {
             Name: '/app/test1',
             Value: 'value1',
             Type: 'String',
-            Description: 'Test parameter 1',
             LastModifiedDate: new Date('2023-01-01'),
             Version: 1
           },
@@ -106,7 +117,6 @@ describe('ParameterStoreService', () => {
             Name: '/app/test2',
             Value: 'value2',
             Type: 'SecureString',
-            Description: 'Test parameter 2',
             LastModifiedDate: new Date('2023-01-02'),
             Version: 2
           }
@@ -114,7 +124,22 @@ describe('ParameterStoreService', () => {
         NextToken: undefined
       };
 
-      mockSSMClient.send = jest.fn().mockResolvedValue(mockResponse);
+      const mockDescribeResponse1 = {
+        Parameters: [{ Description: 'Test parameter 1' }]
+      };
+
+      const mockDescribeResponse2 = {
+        Parameters: [{ Description: 'Test parameter 2' }]
+      };
+
+      const mockTagsResponse = { TagList: [] };
+
+      mockSSMClient.send = jest.fn()
+        .mockResolvedValueOnce(mockResponse)  // GetParametersByPathCommand
+        .mockResolvedValueOnce(mockDescribeResponse1)  // DescribeParametersCommand for test1
+        .mockResolvedValueOnce(mockTagsResponse)  // ListTagsForResourceCommand for test1
+        .mockResolvedValueOnce(mockDescribeResponse2)  // DescribeParametersCommand for test2
+        .mockResolvedValueOnce(mockTagsResponse);  // ListTagsForResourceCommand for test2
 
       const exportOptions: ExportOptions = {
         pathPrefix: '/app',
@@ -157,9 +182,19 @@ describe('ParameterStoreService', () => {
         NextToken: undefined
       };
 
+      const mockDescribeResponse = {
+        Parameters: [{ Description: 'Test description' }]
+      };
+
+      const mockTagsResponse = { TagList: [] };
+
       mockSSMClient.send = jest.fn()
-        .mockResolvedValueOnce(mockResponse1)
-        .mockResolvedValueOnce(mockResponse2);
+        .mockResolvedValueOnce(mockResponse1)  // GetParametersByPathCommand
+        .mockResolvedValueOnce(mockDescribeResponse)  // DescribeParametersCommand for test1
+        .mockResolvedValueOnce(mockTagsResponse)  // ListTagsForResourceCommand for test1
+        .mockResolvedValueOnce(mockResponse2)  // GetParametersByPathCommand (page 2)
+        .mockResolvedValueOnce(mockDescribeResponse)  // DescribeParametersCommand for test2
+        .mockResolvedValueOnce(mockTagsResponse);  // ListTagsForResourceCommand for test2
 
       const exportOptions: ExportOptions = {
         pathPrefix: '/app',
@@ -169,7 +204,7 @@ describe('ParameterStoreService', () => {
       const result = await parameterStoreService.exportParameters(exportOptions);
 
       expect(result).toHaveLength(2);
-      expect(mockSSMClient.send).toHaveBeenCalledTimes(2);
+      expect(mockSSMClient.send).toHaveBeenCalledTimes(6); // 各パラメータに対して3回のAPI呼び出し
     });
 
     it('指定された場合にSecureStringパラメータを除外できること', async () => {
@@ -490,7 +525,10 @@ describe('ParameterStoreService', () => {
       // Access the private method for testing
       const tags = await (parameterStoreService as any).getParameterTags('/app/test');
 
-      expect(tags).toEqual([]);
+      expect(tags).toEqual([
+        { key: 'Environment', value: 'dev' },
+        { key: 'Project', value: 'myapp' }
+      ]);
     });
 
     it('should handle missing tags gracefully', async () => {

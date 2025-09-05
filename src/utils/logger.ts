@@ -13,7 +13,8 @@ const ICONS = {
   skipped: '[-]',    // スキップメッセージ
   dryRun: '[?]',     // ドライランモード
   create: '[+]',     // 作成操作
-  update: '[~]'      // 更新操作
+  update: '[~]',     // 更新操作
+  debug: '[d]'       // デバッグメッセージ
 } as const;
 
 /**
@@ -62,6 +63,10 @@ export class Logger {
 
   public static dryRun(message: string): void {
     this.log('dryRun', `${chalk.magenta('[DRY-RUN]')} ${message}`, chalk.magenta);
+  }
+
+  public static debug(message: string): void {
+    this.log('debug', message, chalk.gray);
   }
 
   public static separator(): void {

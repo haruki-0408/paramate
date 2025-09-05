@@ -9,6 +9,7 @@ jest.mock('@aws-sdk/client-ssm', () => ({
   PutParameterCommand: jest.fn(),
   GetParameterCommand: jest.fn(),
   GetParametersByPathCommand: jest.fn(),
+  DescribeParametersCommand: jest.fn(),
   AddTagsToResourceCommand: jest.fn(),
   ParameterType: {
     String: 'String',

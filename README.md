@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/npm/v/syncmate?style=for-the-badge&logo=npm&logoColor=white" alt="NPM Version">
   <img src="https://img.shields.io/github/license/asano-haruki/syncmate?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/coverage-65.3%25-yellow?style=for-the-badge&logo=jest&logoColor=white" alt="Test Coverage">
-  <img src="https://img.shields.io/badge/tests-96%20passed-brightgreen?style=for-the-badge&logo=jest&logoColor=white" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-passing-brightgreen?style=for-the-badge&logo=jest&logoColor=white" alt="Tests">
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform Support">
+  <img src="https://img.shields.io/badge/Platform-macOS-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform Support">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D16.0.0-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
 </p>
 
@@ -140,14 +140,14 @@ scm generate-template -o <output-file> [オプション]
 | `type` | - | データタイプ | `String`/`SecureString`/`StringList` |
 | `description` | - | 説明文 | 最大500文字 |
 | `kmsKeyId` | - | KMS暗号化キーID | SecureString使用時 |
-| `tags` | - | タグ | `key1=value1;key2=value2` 形式 |
+| `tags` | - | タグ | `key1=value1,key2=value2` 形式 |
 
 ### サンプルCSV
 ```csv
 name,value,type,description,kmsKeyId,tags
-/myapp/db/host,database.example.com,String,データベースホスト名,,env=prod;component=db
-/myapp/db/password,secretpass123,SecureString,DB接続パスワード,alias/myapp-key,env=prod;component=db
-/myapp/api/endpoints,"api1.com;api2.com;api3.com",StringList,API接続先一覧,,env=prod;component=api
+/myapp/db/host,database.example.com,String,データベースホスト名,,env=prod,component=db
+/myapp/db/password,secretpass123,SecureString,DB接続パスワード,alias/myapp-key,env=prod,component=db
+/myapp/api/endpoints,"api1.com;api2.com;api3.com",StringList,API接続先一覧,,env=prod,component=api
 ```
 
 ## データ同期仕様

@@ -1,6 +1,6 @@
 import {
-  Parameter as AWSParameter,
   AddTagsToResourceCommand,
+  DescribeParametersCommand,
   GetParameterCommand,
   GetParametersByPathCommand,
   ListTagsForResourceCommand,
@@ -12,12 +12,6 @@ import { DiffResult, ExportOptions, Parameter, ParameterChange, ParameterFromSto
 import { Logger } from '../utils/logger';
 import { AWS_LIMITS } from '../config/constants';
 import chalk from 'chalk';
-
-
-interface ExtendedAWSParameter extends AWSParameter {
-  Description?: string; // パラメータの説明文
-  LastModifiedUser?: string; // 最終更新ユーザー
-}
 
 /**
  * AWS Parameter Storeとの連携を担当するサービスクラス
@@ -81,16 +75,16 @@ export class ParameterStoreService {
               continue;
             }
 
-            // AWS APIレスポンスを拡張インターフェースとしてキャスト
-            const extendedParam = param as ExtendedAWSParameter;
+            // DescribeParametersCommandで説明文を別途取得
+            const description = await this.getParameterDescription(param.Name);
             const parameter: ParameterFromStore = {
               name: param.Name,
               value: param.Value || '',
               type: (param.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-              description: extendedParam.Description || '',
+              description: description,
               kmsKeyId: '', // GetParametersByPathCommandでは取得できないため空文字
               lastModifiedDate: param.LastModifiedDate || new Date(),
-              lastModifiedUser: extendedParam.LastModifiedUser || '',
+              lastModifiedUser: '', // GetParametersByPathCommandでは取得できない
               version: param.Version || 1,
               tags: await this.getParameterTags(param.Name) // 別APIでタグ情報を取得
             };
@@ -120,15 +114,15 @@ export class ParameterStoreService {
       const response = await this.ssmClient.send(command);
 
       if (response.Parameter) {
-        const extendedParam = response.Parameter as ExtendedAWSParameter;
+        const description = await this.getParameterDescription(response.Parameter.Name!);
         return {
           name: response.Parameter.Name || '',
           value: response.Parameter.Value || '',
           type: (response.Parameter.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-          description: extendedParam.Description || '',
+          description: description,
           kmsKeyId: '',
           lastModifiedDate: response.Parameter.LastModifiedDate || new Date(),
-          lastModifiedUser: extendedParam.LastModifiedUser || '',
+          lastModifiedUser: '', // GetParameterCommandでは取得できない
           version: response.Parameter.Version || 1,
           tags: await this.getParameterTags(response.Parameter.Name!)
         };
@@ -143,7 +137,7 @@ export class ParameterStoreService {
     }
   }
 
-  public async putParameter(parameter: Parameter, overwrite: boolean = false): Promise<void> {
+  public async putParameter(parameter: Parameter, overwrite: boolean = false, dryRun: boolean = false): Promise<void> {
     try {
       const command = new PutParameterCommand({
         Name: parameter.name,
@@ -158,14 +152,71 @@ export class ParameterStoreService {
         })
       });
 
-      await this.ssmClient.send(command);
+      if (dryRun) {
+        // dry-runモードでは権限チェックのみ実行（実際のリソース変更は行わない）
+        Logger.debug(`[DRY-RUN] Checking permissions for: ${parameter.name}`);
+        
+        try {
+          if (overwrite) {
+            // 更新の場合：既存パラメータの取得で権限チェック
+            const existingParam = await this.getParameter(parameter.name);
+            if (!existingParam) {
+              throw new Error('Parameter does not exist for update');
+            }
+            Logger.debug(`[DRY-RUN] Parameter exists and can be read: ${parameter.name}`);
+          } else {
+            // 新規作成の場合：GetParameterで存在しないことを確認（権限チェック含む）
+            try {
+              await this.getParameter(parameter.name);
+              // パラメータが存在する場合はエラー
+              throw new Error(`Parameter ${parameter.name} already exists. Use overwrite option to update.`);
+            } catch (error) {
+              if (error instanceof Error && error.name === 'ParameterNotFound') {
+                // ParameterNotFoundは正常（新規作成可能）
+                Logger.debug(`[DRY-RUN] Parameter does not exist, creation would be possible: ${parameter.name}`);
+              } else {
+                // その他のエラー（権限エラー等）はそのまま伝播
+                throw error;
+              }
+            }
+          }
 
-      // 既存パラメータの場合、別途タグを追加
-      if (overwrite && parameter.tags && parameter.tags.length > 0) {
-        await this.addTagsToParameter(parameter.name, parameter.tags);
+          // KMSキーIDが指定されている場合の権限チェック（簡易）
+          if (parameter.kmsKeyId) {
+            Logger.debug(`[DRY-RUN] KMS key specified: ${parameter.kmsKeyId}`);
+            // 実際のKMS権限チェックは複雑なため、ここでは警告のみ
+            Logger.info(`[DRY-RUN] Note: KMS key permissions for '${parameter.kmsKeyId}' cannot be validated in dry-run mode`);
+          }
+
+          // タグ形式の基本バリデーション
+          if (parameter.tags && parameter.tags.length > 0) {
+            for (const tag of parameter.tags) {
+              if (!tag.key || !tag.value) {
+                throw new Error(`Invalid tag format: key="${tag.key}", value="${tag.value}"`);
+              }
+              // AWS Parameter Store tag validation regex pattern
+              const tagValuePattern = /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/u;
+              if (!tagValuePattern.test(tag.value)) {
+                throw new Error(`Tag value '${tag.value}' contains invalid characters. Only letters, numbers, spaces, and the following characters are allowed: . : / = + - @`);
+              }
+            }
+            Logger.debug(`[DRY-RUN] Tag format validation passed: ${parameter.name}`);
+          }
+
+        } catch (error) {
+          // 権限エラーやその他のエラーをそのまま伝播
+          throw error;
+        }
+      } else {
+        await this.ssmClient.send(command);
+
+        // 既存パラメータの場合、別途タグを追加
+        if (overwrite && parameter.tags && parameter.tags.length > 0) {
+          await this.addTagsToParameter(parameter.name, parameter.tags);
+        }
       }
     } catch (error) {
-      Logger.error(`Error updating parameter ${parameter.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      Logger.error(`Error ${dryRun ? 'validating' : 'updating'} parameter ${parameter.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   }
@@ -193,17 +244,71 @@ export class ParameterStoreService {
     }
   }
 
-  private async addTagsToParameter(parameterName: string, tags: Array<{ key: string; value: string }>): Promise<void> {
+  private async getParameterDescription(parameterName: string): Promise<string> {
     try {
-      const command = new AddTagsToResourceCommand({
-        ResourceType: 'Parameter',
-        ResourceId: parameterName,
-        Tags: tags.map(tag => ({ Key: tag.key, Value: tag.value }))
+      const command = new DescribeParametersCommand({
+        Filters: [
+          {
+            Key: 'Name',
+            Values: [parameterName]
+          }
+        ]
       });
 
-      await this.ssmClient.send(command);
+      const response = await this.ssmClient.send(command);
+      
+      if (response.Parameters && response.Parameters.length > 0) {
+        return response.Parameters[0].Description || '';
+      }
+      
+      return '';
     } catch (error) {
-      Logger.warning(`Failed to add tags to ${parameterName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Description取得に失敗してもエラーとしない（権限問題等）
+      Logger.debug(`Failed to get description for ${parameterName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return '';
+    }
+  }
+
+  private async addTagsToParameter(parameterName: string, tags: Array<{ key: string; value: string }>, dryRun: boolean = false): Promise<void> {
+    try {
+      if (dryRun) {
+        // dry-runモードでは権限チェックのみ実行（実際のタグ変更は行わない）
+        Logger.debug(`[DRY-RUN] Checking tag permissions for: ${parameterName}`);
+        
+        // 既存タグの取得で権限チェック
+        try {
+          const existingTags = await this.getParameterTags(parameterName);
+          Logger.debug(`[DRY-RUN] Tag read permissions confirmed for: ${parameterName} (${existingTags.length} existing tags)`);
+        } catch (error) {
+          // タグ取得権限がない場合の警告（Parameter自体のアクセスは可能でもタグアクセス権限は別）
+          Logger.warning(`[DRY-RUN] Cannot read existing tags for ${parameterName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        // タグ形式バリデーション
+        for (const tag of tags) {
+          if (!tag.key || !tag.value) {
+            throw new Error(`Invalid tag format: key="${tag.key}", value="${tag.value}"`);
+          }
+          const tagValuePattern = /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/u;
+          if (!tagValuePattern.test(tag.value)) {
+            throw new Error(`Tag value '${tag.value}' contains invalid characters`);
+          }
+        }
+
+        Logger.debug(`[DRY-RUN] Tag format validation passed for: ${parameterName}`);
+        Logger.info(`[DRY-RUN] Note: Actual tag write permissions cannot be validated without making changes`);
+      } else {
+        const command = new AddTagsToResourceCommand({
+          ResourceType: 'Parameter',
+          ResourceId: parameterName,
+          Tags: tags.map(tag => ({ Key: tag.key, Value: tag.value }))
+        });
+        await this.ssmClient.send(command);
+      }
+    } catch (error) {
+      const action = dryRun ? 'validate tags for' : 'add tags to';
+      Logger.warning(`Failed to ${action} ${parameterName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   }
 
@@ -239,19 +344,9 @@ export class ParameterStoreService {
       }
 
       try {
-        if (!options.dryRun) {
-          switch (change.type) {
-            case 'create':
-              await this.putParameter(change.parameter, false);
-              break;
-            case 'update':
-              await this.putParameter(change.parameter, true);
-              break;
-          }
-        }
-
         switch (change.type) {
           case 'create':
+            await this.putParameter(change.parameter, false, options.dryRun);
             result.success++;
             if (options.dryRun) {
               Logger.dryRun(`Would create parameter: ${change.parameter.name}`);
@@ -260,6 +355,7 @@ export class ParameterStoreService {
             }
             break;
           case 'update':
+            await this.putParameter(change.parameter, true, options.dryRun);
             result.updated++;
             if (options.dryRun) {
               Logger.dryRun(`Would update parameter: ${change.parameter.name}`);
@@ -272,7 +368,8 @@ export class ParameterStoreService {
         result.failed++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         result.errors.push(`${change.parameter.name}: ${errorMessage}`);
-        Logger.error(`Failed to sync parameter ${change.parameter.name}: ${errorMessage}`);
+        const action = options.dryRun ? 'validate' : 'sync';
+        Logger.error(`Failed to ${action} parameter ${change.parameter.name}: ${errorMessage}`);
       }
     }
 

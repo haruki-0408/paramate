@@ -1,6 +1,12 @@
 import * as path from 'path';
-import { CSVRecord, ValidationResult } from '../types';
+import { CSVRecord } from '../types';
 import { VALIDATION_LIMITS, PARAMETER_TYPES, SECURITY, KMS_KEY_PATTERNS } from '../config/constants';
+
+// バリデーション結果の基本インターフェース
+interface ValidationResult {
+  isValid: boolean;
+  error: string;
+}
 
 /**
  * CSVレコードのバリデーション結果を表すインターフェース
