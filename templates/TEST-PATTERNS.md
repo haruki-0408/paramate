@@ -138,19 +138,80 @@ aws ssm delete-parameters --names $(aws ssm get-parameters-by-path --path /test 
 - [x] 境界値
 - [x] CSVパース時の特殊ケース
 
+## 事前準備
+
+### カスタムKMSキーの作成
+テストファイルでは`alias/my-custom-key`というカスタムKMSキーを使用する箇所が1つあります。以下の手順で作成してください：
+
+```bash
+# 1. KMSキーの作成
+aws kms create-key \
+  --description "SyncMate test parameter encryption key" \
+  --key-usage ENCRYPT_DECRYPT \
+  --origin AWS_KMS
+
+# 2. 作成されたKeyIdを環境変数に保存
+export KEY_ID="<作成されたKeyId>"
+
+# 3. キーエイリアスの作成
+aws kms create-alias \
+  --alias-name alias/my-custom-key \
+  --target-key-id $KEY_ID
+
+# 4. キーポリシーの設定（必要に応じて）
+aws kms put-key-policy \
+  --key-id $KEY_ID \
+  --policy-name default \
+  --policy '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "Enable IAM User Permissions",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::<YOUR_ACCOUNT_ID>:root"
+        },
+        "Action": "kms:*",
+        "Resource": "*"
+      },
+      {
+        "Sid": "Allow SSM to use the key",
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "ssm.amazonaws.com"
+        },
+        "Action": [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }'
+```
+
+### KMSキーの削除（テスト後）
+```bash
+# エイリアスの削除
+aws kms delete-alias --alias-name alias/my-custom-key
+
+# キーの無効化（即座に削除はできないため）
+aws kms schedule-key-deletion --key-id $KEY_ID --pending-window-in-days 7
+```
+
 ## 注意事項
 
 1. **環境分離**: このファイルは`/test/`プレフィックスを使用しているため、本番環境では使用しないでください
-2. **KMSキー**: `alias/aws/ssm`はAWS管理のデフォルトキーのため、事前準備は不要です
+2. **KMSキー**: カスタムKMSキー（`alias/my-custom-key`）は事前作成が必要です。上記手順を参照してください
 3. **エラーケース**: 空文字列やダブルスラッシュなど、意図的にエラーとなるケースも含まれています
 4. **クリーンアップ**: テスト後は必ずパラメータを削除してください
-5. **コスト**: 大量のパラメータ作成によりAWS料金が発生する可能性があります
+5. **コスト**: 大量のパラメータ作成およびKMSキー使用によりAWS料金が発生する可能性があります
 
 ## 統計情報
 
-- **総パラメータ数**: 57個
-- **String型**: 46個
-- **SecureString型**: 6個（AWS管理キー使用: 1個）
+- **総パラメータ数**: 55個
+- **String型**: 44個
+- **SecureString型**: 6個（カスタムKMS使用: 1個）
 - **StringList型**: 5個
 - **最長パラメータ名**: 499文字
 - **最長説明文**: 499文字
