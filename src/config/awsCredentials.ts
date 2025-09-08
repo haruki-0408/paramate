@@ -65,9 +65,8 @@ export class AWSCredentials {
           region = await regionProvider();
         }
       } catch (error) {
-        // AWS SDK標準のリージョン解決に失敗した場合のフォールバック
-        Logger.warning('Could not resolve region from AWS configuration, using default: us-east-1');
-        region = 'us-east-1';
+        // AWS SDK標準のリージョン解決に失敗した場合はエラーを投げる
+        throw new Error('Could not resolve AWS region. Please set AWS_REGION environment variable or specify region with -r option.');
       }
     }
 

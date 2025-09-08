@@ -1,10 +1,10 @@
-# SyncMate 開発ガイド
+# Paramate 開発ガイド
 
 ## プロジェクト構成
 
 ### ディレクトリ構造
 ```
-syncmate/
+paramate/
 ├── src/                    # メインソースコード
 │   ├── cli/               # CLIエントリーポイント
 │   │   └── cli.ts        # コマンド定義・実行
@@ -125,7 +125,7 @@ npm run test:coverage
 ### 開発時デバッグ
 ```bash
 # デバッグモードで実行
-DEBUG=1 npm run dev sync -f test.csv --dry-run
+DEBUG=1 npm run dev put -f test.csv --dry-run
 
 # VSCode デバッガー使用
 # F5でlaunch.json設定に基づいて実行

@@ -159,7 +159,7 @@ export class CSVService {
       },
       {
         name: '/myapp/api/endpoints',
-        value: 'api1.example.com;api2.example.com;api3.example.com',
+        value: '"api1.example.com,api2.example.com,api3.example.com"',
         type: 'StringList',
         description: 'List of API endpoints',
         kmsKeyId: '',
@@ -180,21 +180,22 @@ export class CSVService {
     Logger.success(`Successfully generated CSV template: ${templatePath}`);
   }
 
-  public validateCSVFile(filePath: string): Promise<{ isValid: boolean; errors: string[] }> {
+  public validateCSVFile(filePath: string): Promise<{ isValid: boolean; errors: string[]; warnings: string[] }> {
     return new Promise((resolve) => {
       const errors: string[] = [];
+      const warnings: string[] = [];
       const records: CSVRecord[] = [];
       let lineNumber = 1;
 
       // ファイルパスのセキュリティ検証
       const pathValidation = ValidationUtils.validateFilePath(filePath);
       if (!pathValidation.isValid) {
-        resolve({ isValid: false, errors: [`Invalid file path: ${pathValidation.error}`] });
+        resolve({ isValid: false, errors: [`Invalid file path: ${pathValidation.error}`], warnings: [] });
         return;
       }
 
       if (!fs.existsSync(filePath)) {
-        resolve({ isValid: false, errors: [`CSV file not found at path: ${filePath}`] });
+        resolve({ isValid: false, errors: [`CSV file not found at path: ${filePath}`], warnings: [] });
         return;
       }
 
@@ -217,10 +218,11 @@ export class CSVService {
             errors.push(rowCountValidation.error);
           }
 
-          resolve({ isValid: errors.length === 0, errors });
+
+          resolve({ isValid: errors.length === 0, errors, warnings });
         })
         .on('error', (error: Error) => {
-          resolve({ isValid: false, errors: [`Failed to read CSV file: ${error.message}`] });
+          resolve({ isValid: false, errors: [`Failed to read CSV file: ${error.message}`], warnings: [] });
         });
     });
   }

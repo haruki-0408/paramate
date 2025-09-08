@@ -6,7 +6,7 @@ import * as os from 'os';
 /**
  * CLI 統合テスト
  * 実際のCLIコマンドを子プロセスとして実行し、エンドツーエンドでの動作をテスト：
- * - 各コマンド（generate-template, validate, sync, export, diff）の動作検証
+ * - 各コマンド（generate-template, validate, put, rollback）の動作検証
  * - エラーハンドリングと適切な終了コードの確認
  * - AWS認証エラー、CSVバリデーションなどの統合テスト
  */
@@ -198,8 +198,8 @@ describe('CLI Integration Tests', () => {
     });
   });
 
-  // 同期コマンド（ドライラン）のテスト
-  describe('sync command (dry-run)', () => {
+  // Putコマンド（ドライラン）のテスト
+  describe('put command (dry-run)', () => {
     it('認証エラーを適切に処理できること', async () => {
       const csvContent = [
         'name,value,type,description',
@@ -209,7 +209,7 @@ describe('CLI Integration Tests', () => {
       const csvPath = path.join(tempDir, 'test.csv');
       fs.writeFileSync(csvPath, csvContent);
 
-      const result = await runCLI(['sync', '-f', csvPath, '--dry-run']);
+      const result = await runCLI(['put', '-f', csvPath, '--dry-run']);
 
       // Should fail due to invalid AWS profile, but gracefully
       expect(result.exitCode).toBe(1);
@@ -217,32 +217,14 @@ describe('CLI Integration Tests', () => {
     });
   });
 
-  // エクスポートコマンドのテスト
-  describe('export command', () => {
+  // ロールバックコマンドのテスト
+  describe('rollback command', () => {
     it('認証エラーを適切に処理できること', async () => {
-      const result = await runCLI(['export', '--path-prefix', '/test']);
+      const result = await runCLI(['rollback']);
 
-      // Should fail due to invalid AWS profile, but gracefully
+      // AWS region/認証エラーが発生するため、適切に処理できることを確認
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('failed');
-    });
-  });
-
-  // 差分比較コマンドのテスト
-  describe('diff command', () => {
-    it('AWS認証情報が利用できない場合に失敗すること', async () => {
-      const csvContent = [
-        'name,value,type,description',
-        '/app/test,value,String,Description'
-      ].join('\n');
-
-      const csvPath = path.join(tempDir, 'test.csv');
-      fs.writeFileSync(csvPath, csvContent);
-
-      const result = await runCLI(['diff', '-f', csvPath]);
-
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('Could not load credentials from any providers');
+      expect(result.stderr).toMatch(/Could not (resolve AWS region|load credentials)/)
     });
   });
 
@@ -252,14 +234,14 @@ describe('CLI Integration Tests', () => {
       const result = await runCLI(['--help']);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Tool to sync parameters between AWS Parameter Store and CSV files');
+      expect(result.stdout).toContain('Tool to put parameters from CSV to AWS Parameter Store with rollback support');
     });
 
     it('バージョンを表示できること', async () => {
       const result = await runCLI(['--version']);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('1.1.0');
+      expect(result.stdout).toContain('1.0.0');
     });
   });
 });

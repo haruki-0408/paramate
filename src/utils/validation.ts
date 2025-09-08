@@ -48,6 +48,16 @@ export class ValidationUtils {
       errors.push(`Line ${lineNumber}: Value is empty`);
     }
 
+    // StringList型の値検証（空要素を含む場合は失敗）
+    const type = record.type || PARAMETER_TYPES.STRING;
+    if (type === PARAMETER_TYPES.STRING_LIST && record.value && record.value.trim() !== '') {
+      const listItems = record.value.split(',');
+      const hasEmptyElements = listItems.some(item => item.trim() === '');
+      if (hasEmptyElements) {
+        errors.push(`Line ${lineNumber}: StringList type cannot contain empty elements. Found in value: "${record.value}"`);
+      }
+    }
+
     // パラメータ名のバリデーション
     const name = record.name.trim();
     const nameValidation = this.validateParameterName(name);
@@ -60,7 +70,6 @@ export class ValidationUtils {
     }
 
     // タイプのバリデーション
-    const type = record.type || PARAMETER_TYPES.STRING;
     const validTypes: string[] = [PARAMETER_TYPES.STRING, PARAMETER_TYPES.SECURE_STRING, PARAMETER_TYPES.STRING_LIST];
     if (!validTypes.includes(type)) {
       errors.push(`Line ${lineNumber}: Invalid parameter type '${type}'. Must be one of: ${validTypes.join(', ')}`);
@@ -254,6 +263,22 @@ export class ValidationUtils {
       return { 
         isValid: false, 
         error: 'Parameter name contains invalid characters. Only alphanumeric, underscore, period, hyphen, and forward slash are allowed' 
+      };
+    }
+
+    // 連続するスラッシュの検証
+    if (trimmedName.includes('//')) {
+      return { 
+        isValid: false, 
+        error: 'Parameter name cannot contain consecutive forward slashes (//)' 
+      };
+    }
+
+    // 末尾のスラッシュの検証（ルートパス以外）
+    if (trimmedName.length > 1 && trimmedName.endsWith('/')) {
+      return { 
+        isValid: false, 
+        error: 'Parameter name cannot end with a forward slash (/)' 
       };
     }
 

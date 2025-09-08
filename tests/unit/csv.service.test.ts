@@ -6,9 +6,9 @@ import * as os from 'os';
 
 /**
  * CSVService 単体テスト
- * AWS Parameter StoreとCSVファイル間の変換・検証機能をテスト
+ * CSVファイルからParameter Storeへの投入機能とバリデーションをテスト
  * - CSVパース：ファイル読み取りとパラメータオブジェクト変換
- * - CSVエクスポート：パラメータオブジェクトからCSVファイル生成
+ * - CSVエクスポート：パラメータオブジェクトからCSVファイル生成（レガシー）
  * - テンプレート生成：サンプルCSVファイル作成
  * - バリデーション：CSVファイル内容の妥当性チェック
  */
@@ -93,6 +93,32 @@ describe('CSVService', () => {
         .rejects.toThrow("Parameter name must start with '/'");
     });
 
+    it('連続するスラッシュを含むパラメータ名を適切に拒否すること', async () => {
+      const csvContent = [
+        'name,value,type,description',
+        '//test//invalid//path,value,String,Invalid path'
+      ].join('\n');
+
+      const csvFilePath = path.join(tempDir, 'invalid-slashes.csv');
+      fs.writeFileSync(csvFilePath, csvContent);
+
+      await expect(csvService.parseParametersFromCSV(csvFilePath))
+        .rejects.toThrow('Parameter name cannot contain consecutive forward slashes (//)');
+    });
+
+    it('末尾にスラッシュを含むパラメータ名を適切に拒否すること', async () => {
+      const csvContent = [
+        'name,value,type,description',
+        '/test/invalid/,value,String,Invalid path ending with slash'
+      ].join('\n');
+
+      const csvFilePath = path.join(tempDir, 'invalid-ending.csv');
+      fs.writeFileSync(csvFilePath, csvContent);
+
+      await expect(csvService.parseParametersFromCSV(csvFilePath))
+        .rejects.toThrow('Parameter name cannot end with a forward slash (/)');
+    });
+
     it('パラメータタイプの妥当性を検証すること', async () => {
       const csvContent = [
         'name,value,type,description',
@@ -165,7 +191,7 @@ describe('CSVService', () => {
     it('StringListパラメータタイプをサポートすること', async () => {
       const csvContent = [
         'name,value,type,description',
-        '/app/list,item1;item2;item3,StringList,List of items'
+        '/app/list,"item1,item2,item3",StringList,List of items'
       ].join('\n');
 
       const csvFilePath = path.join(tempDir, 'stringlist.csv');
@@ -176,13 +202,14 @@ describe('CSVService', () => {
       expect(parameters).toHaveLength(1);
       expect(parameters[0]).toEqual({
         name: '/app/list',
-        value: 'item1;item2;item3',
+        value: 'item1,item2,item3',
         type: 'StringList',
         description: 'List of items',
         kmsKeyId: '',
         tags: []
       });
     });
+
   });
 
   // Parameter StoreデータをCSVファイルにエクスポートするテスト
@@ -274,6 +301,7 @@ describe('CSVService', () => {
 
       expect(result.isValid).toBe(true);
       expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
     });
 
     it('バリデーションエラーを検出すること', async () => {

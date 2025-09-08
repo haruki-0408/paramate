@@ -1,10 +1,10 @@
 {
-  "name": "syncmate",
-  "version": "1.1.0",
-  "description": "AWS Parameter StoreとCSVファイル間でパラメータを同期するCLIツール",
+  "name": "paramate",
+  "version": "1.0.0",
+  "description": "AWS Parameter StoreにCSVからパラメータを投入・ロールバックするCLIツール",
   "main": "dist/index.js",
   "bin": {
-    "scm": "dist/cli/cli.js"
+    "prm": "dist/cli/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -25,7 +25,8 @@
     "aws",
     "parameter-store",
     "csv",
-    "sync",
+    "put",
+    "rollback",
     "cli",
     "typescript"
   ],
@@ -33,13 +34,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/asano-haruki/syncmate.git"
+    "url": "git+https://github.com/asano-haruki/paramate.git"
   },
   "bugs": {
-    "url": "https://github.com/asano-haruki/syncmate/issues"
+    "url": "https://github.com/asano-haruki/paramate/issues"
   },
-  "homepage": "https://github.com/asano-haruki/syncmate#readme",
+  "homepage": "https://github.com/asano-haruki/paramate#readme",
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.700.0",
     "@aws-sdk/client-ssm": "^3.700.0",
     "@aws-sdk/client-sts": "^3.700.0",
     "@aws-sdk/config-resolver": "^3.370.0",

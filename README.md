@@ -1,10 +1,10 @@
 <div align="center">
 
-# SyncMate
+# Paramate
 
 <p align="center">
-  <img src="https://img.shields.io/npm/v/syncmate?style=for-the-badge&logo=npm&logoColor=white" alt="NPM Version">
-  <img src="https://img.shields.io/github/license/asano-haruki/syncmate?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/npm/v/paramate?style=for-the-badge&logo=npm&logoColor=white" alt="NPM Version">
+  <img src="https://img.shields.io/github/license/asano-haruki/paramate?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/coverage-65.3%25-yellow?style=for-the-badge&logo=jest&logoColor=white" alt="Test Coverage">
   <img src="https://img.shields.io/badge/tests-passing-brightgreen?style=for-the-badge&logo=jest&logoColor=white" alt="Tests">
 </p>
@@ -23,16 +23,16 @@
 
 </div>
 
-**AWS Parameter StoreとCSVファイル間でパラメータを同期するCLIツール**
+**SSM Parameter StoreにCSVからパラメータを投入できるCLIツール**
 
 ## インストール
 
 ```bash
 # NPMから全体インストール
-npm install -g syncmate
+npm install -g paramate
 
 # 動作確認
-scm --version
+prm --version
 ```
 
 ## 基本的な使い方
@@ -40,43 +40,43 @@ scm --version
 ### 1. テンプレート生成と初期設定
 ```bash
 # CSVテンプレート生成（サンプルデータ付き）
-scm generate-template -o my-parameters.csv
+prm generate-template -o my-parameters.csv
 
 # CSVファイルを編集してパラメータを定義
 # エディタでmy-parameters.csvを開いて必要なパラメータを設定
 ```
 
-### 2. データ同期の基本フロー
+### 2. パラメータ投入の基本フロー
 ```bash
 # ファイル検証
-scm validate -f my-parameters.csv
-
-# 差分プレビュー
-scm diff -f my-parameters.csv
+prm validate -f my-parameters.csv
 
 # テスト実行（実際には変更しない）
-scm sync -f my-parameters.csv --dry-run
+prm put -f my-parameters.csv --dry-run
 
-# 実際の同期実行
-scm sync -f my-parameters.csv
+# 実際のパラメータ投入
+prm put -f my-parameters.csv
 ```
 
-### 3. データ取得
+### 3. データ取得とロールバック
 ```bash
-# Parameter Storeから現在の設定をCSV出力
-scm export -o current-settings.csv
+# Parameter StoreからCSVにエクスポート
+prm export -o exported-parameters.csv
 
-# 特定パスのみエクスポート
-scm export --path-prefix /myapp/ -o myapp-settings.csv
+# CSVとParameter Storeの差分確認
+prm diff -f my-parameters.csv
+
+# 問題が発生した場合のロールバック
+prm rollback
 ```
 
 ## コマンドリファレンス
 
-### `scm sync` - データ同期
-**CSVファイルからParameter Storeへパラメータを同期**
+### `prm put` - パラメータ投入
+**CSVファイルからParameter Storeへパラメータを投入**
 
 ```bash
-scm sync -f <csv-file> [オプション]
+prm put -f <csv-file> [オプション]
 ```
 
 **主要オプション：**
@@ -88,11 +88,11 @@ scm sync -f <csv-file> [オプション]
 | `-p, --profile` | AWSプロファイル指定 | `-p production` |
 | `--path-prefix` | パス絞り込み | `--path-prefix /myapp/` |
 
-### `scm export` - データ取得
+### `prm export` - データ取得
 **Parameter StoreからCSVファイルへデータを取得**
 
 ```bash
-scm export [オプション] -o <output-file>
+prm export [オプション] -o <output-file>
 ```
 
 **主要オプション：**
@@ -104,31 +104,48 @@ scm export [オプション] -o <output-file>
 | `--no-decrypt` | 暗号化値のまま取得 | `--no-decrypt` |
 | `-r, --region` | AWSリージョン指定 | `-r us-west-2` |
 
-### `scm diff` - 差分確認
+### `prm diff` - 差分確認
 **CSVファイルと現在のParameter Storeの差分表示**
 
 ```bash
-scm diff -f <csv-file> [オプション]
+prm diff -f <csv-file> [オプション]
 ```
 
-### `scm validate` - ファイル検証
+**注意**: diffコマンドは、CSVファイルの内容に基づいて新規作成・変更項目のみを表示します。既存パラメータの削除は表示されません。
+
+### `prm validate` - ファイル検証
 **CSVファイルの形式とデータをチェック**
 
 ```bash
-scm validate -f <csv-file>
+prm validate -f <csv-file>
 ```
 
-### `scm generate-template` - テンプレート生成
+### `prm generate-template` - テンプレート生成
 **サンプルCSVファイルを生成**
 
 ```bash
-scm generate-template -o <output-file> [オプション]
+prm generate-template -o <output-file> [オプション]
 ```
 
 **オプション：**
 | オプション | 説明 |
 |-----------|------|
 | `--no-examples` | サンプルデータなしで生成 |
+
+### `prm rollback` - ロールバック
+**前回put操作をロールバック**
+
+```bash
+prm rollback [オプション]
+```
+
+**主要オプション:**
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `-r, --region` | AWSリージョン指定 | `-r ap-northeast-1` |
+| `-p, --profile` | AWSプロファイル指定 | `-p production` |
+
+**注意**: ロールバックは前回のput操作で変更されたパラメータを元の状態に戻します。作成されたパラメータは削除され、更新されたパラメータは以前の値に復元されます。
 
 ## CSVファイル仕様
 
@@ -147,12 +164,33 @@ scm generate-template -o <output-file> [オプション]
 name,value,type,description,kmsKeyId,tags
 /myapp/db/host,database.example.com,String,データベースホスト名,,env=prod,component=db
 /myapp/db/password,secretpass123,SecureString,DB接続パスワード,alias/myapp-key,env=prod,component=db
-/myapp/api/endpoints,"api1.com;api2.com;api3.com",StringList,API接続先一覧,,env=prod,component=api
+/myapp/api/endpoints,"api1.com,api2.com,api3.com",StringList,API接続先一覧,,env=prod,component=api
 ```
 
-## データ同期仕様
+### 📋 StringList型の書式仕様
 
-### 同期動作
+**StringList型のパラメータは必ずダブルクォート（""）で囲む必要があります：**
+
+✅ **正しい書式**：
+```csv
+/myapp/servers,"server1.com,server2.com,server3.com",StringList,サーバーリスト,,
+/myapp/tags,"prod,webapp,api",StringList,タグリスト,,
+```
+
+❌ **間違った書式**：
+```csv
+/myapp/servers,server1.com,server2.com,server3.com,StringList,サーバーリスト,,  # CSVカンマと混同
+/myapp/tags,prod;webapp;api,StringList,タグリスト,,                        # セミコロン区切りは非対応
+```
+
+**理由**：
+- AWS Parameter StoreではStringListはカンマ区切りが標準
+- CSVファイルのフィールド区切りもカンマのため、StringList内のカンマと混同を防ぐためダブルクォートで囲む
+- ダブルクォート囲いにより、StringList値内にカンマを含めることが可能
+
+## パラメータ投入仕様
+
+### 投入動作
 - **新規パラメータ**: Parameter Storeに作成
 - **既存パラメータ**: 値が異なる場合のみ更新
 - **同一パラメータ**: スキップ（変更なし）
@@ -175,7 +213,8 @@ name,value,type,description,kmsKeyId,tags
 1. コマンドオプション（`-r region`）
 2. 環境変数（`AWS_REGION`, `AWS_DEFAULT_REGION`）
 3. `~/.aws/config`の設定
-4. デフォルト：`us-east-1`
+
+**注意**: リージョンが上記のいずれからも取得できない場合はエラーになります。必ず適切なリージョン設定を行ってください。
 
 ## AWS設定
 
@@ -191,7 +230,10 @@ name,value,type,description,kmsKeyId,tags
         "ssm:GetParameters", 
         "ssm:GetParametersByPath",
         "ssm:PutParameter",
-        "ssm:AddTagsToResource"
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource",
+        "ssm:DescribeParameters",
+        "ssm:ListTagsForResource"
       ],
       "Resource": "*"
     }
@@ -220,17 +262,63 @@ export AWS_REGION=ap-northeast-1
 
 ## 注意事項・制限事項
 
+### 使用上の制限
+- **CSVファイル**: 最大500行まで対応
+- **処理速度**: 大量のパラメータ（50個以上）では数分程度かかります
+- **ロールバック期限**: ロールバック可能期間は7日間のみ
+- **同時実行**: 複数のparamateコマンドを同時実行しないでください
+
+### AWSサービス制限
+- **Parameter Store**: AWS側のレート制限により、大量データ投入時に時間がかかる場合があります
+- **リージョン**: 異なるリージョン間でのパラメータ移行は直接サポートしていません
+- **権限**: 実行前に適切なIAM権限が設定されている必要があります
+
 ### セキュリティ
 - **SecureString**: KMS暗号化でParameter Storeに保存
 - **ログ出力**: パスワードなどの機密情報はマスク表示
 - **ファイルアクセス**: パストラバーサル攻撃対策済み
 
-### データ制限
+### データ形式制限
 - **CSVファイル**: 最大500行
 - **パラメータ名**: 最大500文字、`/`で開始必須
 - **パラメータ値**: 空文字不可
 - **説明文**: 最大500文字
 - **タグ**: キー・値ともに最大128文字
+
+### レート制限とリトライ仕様
+Paramateは、AWS Parameter Store APIのレート制限に対応するため、保守的な設定で動作します：
+
+**AWS Parameter Store APIレート制限：**
+- **PutParameterの制限**: 3 TPS（transactions per second）がデフォルト
+- **高スループット有効時**: 10 TPSまで向上（追加料金が発生）
+- **GetParameter系**: デフォルト40 TPS共有（GetParameter、GetParameters、GetParametersByPath）
+
+**デフォルト設定：**
+- **並行処理**: 1つずつシーケンシャル実行（安全性重視）
+- **Rate Limitエラー発生時のみ遅延・リトライを実行
+
+**自動リトライ機能：**
+- **最大リトライ回数**: 10回
+- **初回リトライ待機**: 1.5秒
+- **最大リトライ待機**: 60秒
+- **指数バックオフ**: 待機時間を2倍ずつ増加
+- **ジッター機能**: 同時リトライ分散のため0-200msのランダム待機追加
+
+**レート制限が発生した場合：**
+```
+Rate limit hit for /myapp/db/host. Retrying in 2341ms (attempt 2/10)
+Rate limit hit for /myapp/db/host. Retrying in 4189ms (attempt 3/10)
+```
+上記のようなメッセージが表示されますが、自動的にリトライされるため通常は手動介入は不要です。
+
+**⚠️ 重要な注意点：**
+- **PutParameterのレート制限**: デフォルト3 TPSのため、大量パラメータ（50個以上）では完了まで数分かかります
+- **高スループット設定**: Parameter Storeの高スループット設定（10 TPS）を有効にすると処理速度向上（追加料金発生）
+- **Rate Limitエラー**: 3 TPS制限を超えると自動リトライが発生し、処理時間が大幅に増加する可能性があります
+- **リトライ上限**: まれにリトライ上限（10回）に達してエラーになる場合は、しばらく待ってから再実行してください
+
+**高スループット設定の参考情報：**
+高スループット設定を有効にするには、[AWS公式ドキュメント](https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-throughput.html)を参照してください。
 
 ### 互換性
 - **Node.js**: v16.0.0以上
@@ -258,7 +346,7 @@ cat ~/.aws/credentials
 
 # 詳細ログ出力
 export DEBUG=1
-scm sync -f parameters.csv --dry-run
+prm put -f parameters.csv --dry-run
 ```
 
 ## ライセンス
