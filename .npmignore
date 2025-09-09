@@ -66,6 +66,11 @@ test-templates/
 ecs-parameters.csv
 *.csv
 
+# Rollback state files
+.paramate/
+*-state.json
+last-put-state.json
+
 # Lock files (optional - some prefer to include)
 package-lock.json
 yarn.lock

@@ -810,7 +810,7 @@ export class ParameterStoreService {
       const rollbackState = await RollbackService.loadRollbackState();
 
       if (!rollbackState) {
-        throw new Error('No rollback state found or rollback functionality not yet implemented');
+        throw new Error('No rollback history available. Please run a put operation first.');
       }
 
       Logger.info(`Found rollback state from ${rollbackState.putTimestamp}`);
