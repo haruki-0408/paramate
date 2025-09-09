@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as packageJson from '../../package.json';
 
 /**
  * CLI 統合テスト
@@ -241,7 +242,7 @@ describe('CLI Integration Tests', () => {
       const result = await runCLI(['--version']);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('1.0.0');
+      expect(result.stdout).toContain(packageJson.version);
     });
   });
 });
