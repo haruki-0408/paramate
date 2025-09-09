@@ -889,8 +889,9 @@ export class ParameterStoreService {
         await Promise.all(batchPromises);
       }
 
-      // rollback完了後、状態はクリアしない（put時のみ更新する仕様）
-      Logger.info('Rollback completed. State preserved for future operations.');
+      // rollback完了後、履歴をクリア（成功時のみ）
+      RollbackService.clearRollbackState();
+      Logger.info('Rollback completed successfully. History cleared.');
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
