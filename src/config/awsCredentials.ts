@@ -1,7 +1,7 @@
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
-import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
+import { GetCallerIdentityCommand, STSClient, STSClientConfig } from '@aws-sdk/client-sts';
 import { loadConfig } from '@aws-sdk/node-config-provider';
-import { NODE_REGION_CONFIG_OPTIONS, NODE_REGION_CONFIG_FILE_OPTIONS } from '@aws-sdk/config-resolver';
+import { NODE_REGION_CONFIG_FILE_OPTIONS, NODE_REGION_CONFIG_OPTIONS } from '@aws-sdk/config-resolver';
 import { Logger } from '../utils/logger';
 
 /**
@@ -15,7 +15,7 @@ export class AWSCredentials {
    * AWS SDK v3標準のリージョンプロバイダーチェーンとcredentialプロバイダーチェーンを使用
    * 環境変数、設定ファイル、プロファイルから自動的に設定を取得
    */
-  public static async createConfig(options: { region?: string; profile?: string } = {}): Promise<any> {
+  public static async createConfig(options: { region?: string; profile?: string } = {}): Promise<STSClientConfig> {
     // AWS SDK標準の認証プロバイダーチェーンで認証情報を自動取得
     const credentials = fromNodeProviderChain({
       profile: options.profile,
@@ -48,7 +48,7 @@ export class AWSCredentials {
         NODE_REGION_CONFIG_OPTIONS,
         NODE_REGION_CONFIG_FILE_OPTIONS
       );
-      
+
       try {
         // プロファイル指定がある場合は環境変数でプロファイルを設定
         if (options.profile) {
@@ -81,18 +81,18 @@ export class AWSCredentials {
    * MFA認証を一回のみ実行し、設定オブジェクトと認証情報を返す
    */
   public static async createConfigWithContext(options: { region?: string; profile?: string } = {}): Promise<{
-    config: any;
+    config: STSClientConfig;
     context: { account: string; region: string; arn: string; profile?: string };
   }> {
     try {
       const config = await this.createConfig(options);
       const stsClient = new STSClient(config);
       const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-      
+
       const context = {
-        account: identity.Account!,
-        region: config.region,
-        arn: identity.Arn!,
+        account: identity.Account || 'unknown',
+        region: config.region as string,
+        arn: identity.Arn || 'unknown',
         profile: options.profile
       };
 
@@ -107,12 +107,12 @@ export class AWSCredentials {
   // 現在のAWS認証コンテキストを表示
   public static async displayCurrentContext(options: { region?: string; profile?: string } = {}): Promise<void> {
     const { context } = await this.createConfigWithContext(options);
-    
-    Logger.info(`AWS Context:`);
+
+    Logger.info('AWS Context:');
     Logger.info(`  Account: ${context.account}`);
     Logger.info(`  Region:  ${context.region}`);
     Logger.info(`  User:    ${context.arn}`);
-    
+
     if (context.profile) {
       Logger.info(`  Profile: ${context.profile}`);
     }

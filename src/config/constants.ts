@@ -36,7 +36,7 @@ export const PARAMETER_TYPES = {
  */
 export const KMS_KEY_PATTERNS = {
   KEY_ID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, // UUID形式
-  ALIAS: /^alias\/[a-zA-Z0-9\/_-]+$/, // エイリアス形式（例: alias/my-key）
+  ALIAS: /^alias\/[a-zA-Z0-9/_-]+$/, // エイリアス形式（例: alias/my-key）
   ARN: /^arn:aws:kms:[a-z0-9-]+:\d{12}:key\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i // ARN形式
 } as const;
 
@@ -66,15 +66,15 @@ export const RATE_LIMIT_CONFIG = {
   PUT_CONCURRENT_LIMIT: 1, // 並行処理数を1に減らす（完全シーケンシャル実行）
   PUT_BATCH_DELAY_MS: 1000, // バッチ間の待機時間を1秒に増加
   PUT_REQUEST_DELAY_MS: 250, // 個別リクエスト間の待機時間を250msに増加
-  
-  
+
+
   // リトライ設定
   MAX_RETRY_ATTEMPTS: 10, // 最大リトライ回数を10回に増加
   INITIAL_RETRY_DELAY_MS: 1500, // 初回リトライ待機時間を1.5秒に増加
   MAX_RETRY_DELAY_MS: 60000, // 最大リトライ待機時間を60秒に増加
   RETRY_BACKOFF_MULTIPLIER: 2, // 待機時間の倍率（指数バックオフ）
-  
+
   // エクスポート処理の設定（より保守的に）
   EXPORT_CONCURRENT_LIMIT: 3, // エクスポート処理の並行数を3に減らす
-  EXPORT_BATCH_DELAY_MS: 500, // エクスポート処理のバッチ間待機時間を500msに増加
+  EXPORT_BATCH_DELAY_MS: 500 // エクスポート処理のバッチ間待機時間を500msに増加
 } as const;

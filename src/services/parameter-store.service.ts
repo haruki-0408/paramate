@@ -1,4 +1,5 @@
 import {
+  Parameter as AWSParameter,
   AddTagsToResourceCommand,
   DeleteParameterCommand,
   DescribeParametersCommand,
@@ -9,7 +10,8 @@ import {
   PutParameterCommand,
   SSMClient
 } from '@aws-sdk/client-ssm';
-import { KMSClient, DescribeKeyCommand } from '@aws-sdk/client-kms';
+import { DescribeKeyCommand, KMSClient } from '@aws-sdk/client-kms';
+import { STSClientConfig } from '@aws-sdk/client-sts';
 import { DiffResult, ExportOptions, Parameter, ParameterChange, ParameterFromStore, SyncOptions, SyncResult } from '../types';
 import { Logger } from '../utils/logger';
 import { AWS_LIMITS, RATE_LIMIT_CONFIG } from '../config/constants';
@@ -33,7 +35,7 @@ export class ParameterStoreService {
    * @param profile - AWS プロファイル名（オプション）
    * @param config - 事前設定済みのAWS設定オブジェクト（MFA認証済み等）
    */
-  constructor(region?: string, _profile?: string, config?: any) {
+  constructor(region?: string, _profile?: string, config?: STSClientConfig) {
     if (!region) {
       throw new Error('AWS region is required. Please specify region via -r option or AWS_REGION environment variable.');
     }
@@ -109,17 +111,21 @@ export class ParameterStoreService {
       const response = await this.ssmClient.send(command);
 
       if (response.Parameter) {
-        const description = await this.getParameterDescription(response.Parameter.Name!);
+        const parameterName = response.Parameter.Name;
+        if (!parameterName) {
+          throw new Error('Parameter name is missing from AWS response');
+        }
+        const description = await this.getParameterDescription(parameterName);
         return {
           name: response.Parameter.Name || '',
           value: response.Parameter.Value || '',
           type: (response.Parameter.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-          description: description,
+          description,
           kmsKeyId: '',
           lastModifiedDate: response.Parameter.LastModifiedDate || new Date(),
           lastModifiedUser: '', // GetParameterCommandでは取得できない
           version: response.Parameter.Version || 1,
-          tags: await this.getParameterTags(response.Parameter.Name!)
+          tags: await this.getParameterTags(parameterName)
         };
       }
 
@@ -150,55 +156,49 @@ export class ParameterStoreService {
       if (dryRun) {
         // dry-runモードでは権限チェックのみ実行（実際のリソース変更は行わない）
         Logger.debug(`[DRY-RUN] Checking permissions for: ${parameter.name}`);
-        
-        try {
-          if (overwrite) {
-            // 更新の場合：既存パラメータの取得で権限チェック
-            const existingParam = await this.getParameter(parameter.name);
-            if (!existingParam) {
-              throw new Error('Parameter does not exist for update');
-            }
-            Logger.debug(`[DRY-RUN] Parameter exists and can be read: ${parameter.name}`);
+
+        if (overwrite) {
+          // 更新の場合：既存パラメータの取得で権限チェック
+          const existingParam = await this.getParameter(parameter.name);
+          if (!existingParam) {
+            throw new Error('Parameter does not exist for update');
+          }
+          Logger.debug(`[DRY-RUN] Parameter exists and can be read: ${parameter.name}`);
+        } else {
+          // 新規作成の場合：GetParameterで存在しないことを確認（権限チェック含む）
+          const existingParam = await this.getParameter(parameter.name);
+          if (existingParam) {
+            // パラメータが存在する場合はエラー
+            throw new Error(`Parameter ${parameter.name} already exists. Use overwrite option to update.`);
           } else {
-            // 新規作成の場合：GetParameterで存在しないことを確認（権限チェック含む）
-            const existingParam = await this.getParameter(parameter.name);
-            if (existingParam) {
-              // パラメータが存在する場合はエラー
-              throw new Error(`Parameter ${parameter.name} already exists. Use overwrite option to update.`);
-            } else {
-              // パラメータが存在しない場合は正常（新規作成可能）
-              Logger.debug(`[DRY-RUN] Parameter does not exist, creation would be possible: ${parameter.name}`);
+            // パラメータが存在しない場合は正常（新規作成可能）
+            Logger.debug(`[DRY-RUN] Parameter does not exist, creation would be possible: ${parameter.name}`);
+          }
+        }
+
+        // KMSキーIDが指定されている場合の存在確認
+        if (parameter.kmsKeyId) {
+          Logger.debug(`[DRY-RUN] Validating KMS key: ${parameter.kmsKeyId}`);
+          const kmsValidation = await this.validateKmsKeyExists(parameter.kmsKeyId);
+          if (!kmsValidation.exists) {
+            throw new Error(`[DRY-RUN] ${kmsValidation.error}`);
+          }
+          Logger.debug(`[DRY-RUN] KMS key validation passed: ${parameter.kmsKeyId}`);
+        }
+
+        // タグ形式の基本バリデーション
+        if (parameter.tags && parameter.tags.length > 0) {
+          for (const tag of parameter.tags) {
+            if (!tag.key || !tag.value) {
+              throw new Error(`Invalid tag format: key="${tag.key}", value="${tag.value}"`);
+            }
+            // AWS Parameter Store tag validation regex pattern
+            const tagValuePattern = /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/u;
+            if (!tagValuePattern.test(tag.value)) {
+              throw new Error(`Tag value '${tag.value}' contains invalid characters. Only letters, numbers, spaces, and the following characters are allowed: . : / = + - @`);
             }
           }
-
-          // KMSキーIDが指定されている場合の存在確認
-          if (parameter.kmsKeyId) {
-            Logger.debug(`[DRY-RUN] Validating KMS key: ${parameter.kmsKeyId}`);
-            const kmsValidation = await this.validateKmsKeyExists(parameter.kmsKeyId);
-            if (!kmsValidation.exists) {
-              throw new Error(`[DRY-RUN] ${kmsValidation.error}`);
-            }
-            Logger.debug(`[DRY-RUN] KMS key validation passed: ${parameter.kmsKeyId}`);
-          }
-
-          // タグ形式の基本バリデーション
-          if (parameter.tags && parameter.tags.length > 0) {
-            for (const tag of parameter.tags) {
-              if (!tag.key || !tag.value) {
-                throw new Error(`Invalid tag format: key="${tag.key}", value="${tag.value}"`);
-              }
-              // AWS Parameter Store tag validation regex pattern
-              const tagValuePattern = /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/u;
-              if (!tagValuePattern.test(tag.value)) {
-                throw new Error(`Tag value '${tag.value}' contains invalid characters. Only letters, numbers, spaces, and the following characters are allowed: . : / = + - @`);
-              }
-            }
-            Logger.debug(`[DRY-RUN] Tag format validation passed: ${parameter.name}`);
-          }
-
-        } catch (error) {
-          // 権限エラーやその他のエラーをそのまま伝播
-          throw error;
+          Logger.debug(`[DRY-RUN] Tag format validation passed: ${parameter.name}`);
         }
       } else {
         // リトライ機能付きでPutParameterを実行
@@ -223,14 +223,14 @@ export class ParameterStoreService {
       });
 
       const response = await this.ssmClient.send(command);
-      
+
       if (response.TagList) {
         return response.TagList.map(tag => ({
           key: tag.Key || '',
           value: tag.Value || ''
         }));
       }
-      
+
       return [];
     } catch (error) {
       // タグ取得に失敗してもエラーとしない（権限問題等）
@@ -250,11 +250,11 @@ export class ParameterStoreService {
       });
 
       const response = await this.ssmClient.send(command);
-      
+
       if (response.Parameters && response.Parameters.length > 0) {
         return response.Parameters[0].Description || '';
       }
-      
+
       return '';
     } catch (error) {
       // Description取得に失敗してもエラーとしない（権限問題等）
@@ -273,26 +273,27 @@ export class ParameterStoreService {
       const command = new DescribeKeyCommand({
         KeyId: kmsKeyId
       });
-      
+
       const response = await this.kmsClient.send(command);
-      
+
       // キーが削除済みまたは削除スケジュール済みの場合はエラーとする
       if (response.KeyMetadata?.KeyState === 'PendingDeletion' || response.KeyMetadata?.KeyState === 'Disabled') {
-        return { 
-          exists: false, 
-          error: `KMS key '${kmsKeyId}' is ${response.KeyMetadata.KeyState}` 
+        return {
+          exists: false,
+          error: `KMS key '${kmsKeyId}' is ${response.KeyMetadata.KeyState}`
         };
       }
-      
+
       return { exists: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // アクセス権限がない、キーが存在しない等のエラーをキャッチ
-      const errorMessage = error.name === 'NotFoundException' 
+      const errorObj = error as { name?: string; message?: string };
+      const errorMessage = errorObj.name === 'NotFoundException'
         ? `KMS key '${kmsKeyId}' does not exist`
-        : error.name === 'AccessDeniedException'
+        : errorObj.name === 'AccessDeniedException'
         ? `Access denied to KMS key '${kmsKeyId}'. Check IAM permissions`
-        : `Failed to validate KMS key '${kmsKeyId}': ${error.message}`;
-        
+        : `Failed to validate KMS key '${kmsKeyId}': ${errorObj.message || 'Unknown error'}`;
+
       return { exists: false, error: errorMessage };
     }
   }
@@ -304,32 +305,33 @@ export class ParameterStoreService {
   private async putParameterWithRetry(command: PutParameterCommand, parameterName: string, attempt: number = 1): Promise<void> {
     try {
       await this.ssmClient.send(command);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Rate Limitエラーの判定
-      const isRateLimitError = error.name === 'Throttling' || 
-                               error.name === 'ThrottlingException' ||
-                               error.name === 'TooManyRequestsException' ||
-                               error.message?.includes('Rate exceeded') ||
-                               error.message?.includes('too many requests');
+      const errorObj = error as { name?: string; message?: string };
+      const isRateLimitError = errorObj.name === 'Throttling' ||
+                               errorObj.name === 'ThrottlingException' ||
+                               errorObj.name === 'TooManyRequestsException' ||
+                               errorObj.message?.includes('Rate exceeded') ||
+                               errorObj.message?.includes('too many requests');
 
       if (isRateLimitError && attempt <= RATE_LIMIT_CONFIG.MAX_RETRY_ATTEMPTS) {
         // 指数バックオフによる待機時間計算
         const baseDelay = RATE_LIMIT_CONFIG.INITIAL_RETRY_DELAY_MS;
         const backoffDelay = baseDelay * Math.pow(RATE_LIMIT_CONFIG.RETRY_BACKOFF_MULTIPLIER, attempt - 1);
         const finalDelay = Math.min(backoffDelay, RATE_LIMIT_CONFIG.MAX_RETRY_DELAY_MS);
-        
+
         // ジッターを追加（同時リトライの分散）
         const jitter = Math.random() * 200; // 0-200msのランダム待機
         const totalDelay = finalDelay + jitter;
-        
+
         Logger.warning(`Rate limit hit for ${parameterName}. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${RATE_LIMIT_CONFIG.MAX_RETRY_ATTEMPTS})`);
-        
+
         await new Promise(resolve => setTimeout(resolve, totalDelay));
-        
+
         // 再帰的にリトライ実行
         return this.putParameterWithRetry(command, parameterName, attempt + 1);
       }
-      
+
       // Rate Limitエラー以外、またはリトライ回数超過の場合は例外を再スロー
       throw error;
     }
@@ -342,32 +344,33 @@ export class ParameterStoreService {
   private async deleteParameterWithRetry(command: DeleteParameterCommand, parameterName: string, attempt: number = 1): Promise<void> {
     try {
       await this.ssmClient.send(command);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Rate Limitエラーの判定
-      const isRateLimitError = error.name === 'Throttling' || 
-                               error.name === 'ThrottlingException' ||
-                               error.name === 'TooManyRequestsException' ||
-                               error.message?.includes('Rate exceeded') ||
-                               error.message?.includes('too many requests');
+      const errorObj = error as { name?: string; message?: string };
+      const isRateLimitError = errorObj.name === 'Throttling' ||
+                               errorObj.name === 'ThrottlingException' ||
+                               errorObj.name === 'TooManyRequestsException' ||
+                               errorObj.message?.includes('Rate exceeded') ||
+                               errorObj.message?.includes('too many requests');
 
       if (isRateLimitError && attempt <= RATE_LIMIT_CONFIG.MAX_RETRY_ATTEMPTS) {
         // 指数バックオフによる待機時間計算
         const baseDelay = RATE_LIMIT_CONFIG.INITIAL_RETRY_DELAY_MS;
         const backoffDelay = baseDelay * Math.pow(RATE_LIMIT_CONFIG.RETRY_BACKOFF_MULTIPLIER, attempt - 1);
         const finalDelay = Math.min(backoffDelay, RATE_LIMIT_CONFIG.MAX_RETRY_DELAY_MS);
-        
+
         // ジッターを追加（同時リトライの分散）
         const jitter = Math.random() * 200; // 0-200msのランダム待機
         const totalDelay = finalDelay + jitter;
-        
+
         Logger.warning(`Rate limit hit for ${parameterName}. Retrying delete in ${Math.round(totalDelay)}ms (attempt ${attempt}/${RATE_LIMIT_CONFIG.MAX_RETRY_ATTEMPTS})`);
-        
+
         await new Promise(resolve => setTimeout(resolve, totalDelay));
-        
+
         // 再帰的にリトライ実行
         return this.deleteParameterWithRetry(command, parameterName, attempt + 1);
       }
-      
+
       // Rate Limitエラー以外、またはリトライ回数超過の場合は例外を再スロー
       throw error;
     }
@@ -378,7 +381,7 @@ export class ParameterStoreService {
       if (dryRun) {
         // dry-runモードでは権限チェックのみ実行（実際のタグ変更は行わない）
         Logger.debug(`[DRY-RUN] Checking tag permissions for: ${parameterName}`);
-        
+
         // 既存タグの取得で権限チェック
         try {
           const existingTags = await this.getParameterTags(parameterName);
@@ -400,7 +403,7 @@ export class ParameterStoreService {
         }
 
         Logger.debug(`[DRY-RUN] Tag format validation passed for: ${parameterName}`);
-        Logger.info(`[DRY-RUN] Note: Actual tag write permissions cannot be validated without making changes`);
+        Logger.info('[DRY-RUN] Note: Actual tag write permissions cannot be validated without making changes');
       } else {
         const command = new AddTagsToResourceCommand({
           ResourceType: 'Parameter',
@@ -468,7 +471,7 @@ export class ParameterStoreService {
     // 実際の同期処理（Rate Limit対応のバッチ処理）
     const actionableChanges = diffResult.changes.filter(change => change.type !== 'skip');
     const skipCount = diffResult.changes.filter(change => change.type === 'skip').length;
-    
+
     // スキップしたパラメータのログ出力
     result.skipped += skipCount;
     if (skipCount > 0) {
@@ -479,7 +482,7 @@ export class ParameterStoreService {
     const batchSize = RATE_LIMIT_CONFIG.PUT_CONCURRENT_LIMIT;
     for (let i = 0; i < actionableChanges.length; i += batchSize) {
       const batch = actionableChanges.slice(i, i + batchSize);
-      
+
       // バッチ内の処理を並行実行
       const batchPromises = batch.map(async (change) => {
         try {
@@ -511,7 +514,7 @@ export class ParameterStoreService {
           Logger.error(`Failed to ${action} parameter ${change.parameter.name}: ${errorMessage}`);
         }
       });
-      
+
       // バッチ内の処理を並行実行し、すべて完了を待機
       await Promise.all(batchPromises);
     }
@@ -590,7 +593,7 @@ export class ParameterStoreService {
     const sortedNew = [...newTags].sort((a, b) => a.key.localeCompare(b.key));
 
     for (let i = 0; i < sortedExisting.length; i++) {
-      if (sortedExisting[i].key !== sortedNew[i].key || 
+      if (sortedExisting[i].key !== sortedNew[i].key ||
           sortedExisting[i].value !== sortedNew[i].value) {
         return false;
       }
@@ -603,7 +606,7 @@ export class ParameterStoreService {
    * パラメータの詳細情報を並行処理数制限付きで取得
    * AWS Parameter Store APIのレート制限（40req/s）を考慮して並行処理数を制限
    */
-  private async processParametersBatch(params: any[]): Promise<ParameterFromStore[]> {
+  private async processParametersBatch(params: AWSParameter[]): Promise<ParameterFromStore[]> {
     const CONCURRENT_LIMIT = RATE_LIMIT_CONFIG.EXPORT_CONCURRENT_LIMIT; // 並行処理数の制限
     const results: ParameterFromStore[] = [];
 
@@ -611,19 +614,22 @@ export class ParameterStoreService {
     for (let i = 0; i < params.length; i += CONCURRENT_LIMIT) {
       const batch = params.slice(i, i + CONCURRENT_LIMIT);
       const batchPromises = batch.map(async (param) => {
+        if (!param.Name) {
+          throw new Error('Parameter name is missing');
+        }
         const description = await this.getParameterDescription(param.Name);
         const tags = await this.getParameterTags(param.Name);
-        
+
         return {
           name: param.Name,
           value: param.Value || '',
           type: (param.Type as 'String' | 'SecureString' | 'StringList') || 'String',
-          description: description,
+          description,
           kmsKeyId: '', // GetParametersByPathCommandでは取得できないため空文字
           lastModifiedDate: param.LastModifiedDate || new Date(),
           lastModifiedUser: '', // GetParametersByPathCommandでは取得できない
           version: param.Version || 1,
-          tags: tags
+          tags
         } as ParameterFromStore;
       });
 
@@ -686,7 +692,7 @@ export class ParameterStoreService {
           }
 
           const response = answer.toLowerCase().trim();
-          
+
           if (response === 'y' || response === 'yes') {
             resolve(true);
           } else if (response === 'n' || response === 'no') {
@@ -802,7 +808,7 @@ export class ParameterStoreService {
     try {
       // rollback状態を読み込み
       const rollbackState = await RollbackService.loadRollbackState();
-      
+
       if (!rollbackState) {
         throw new Error('No rollback state found or rollback functionality not yet implemented');
       }
@@ -827,7 +833,7 @@ export class ParameterStoreService {
       const batchSize = RATE_LIMIT_CONFIG.PUT_CONCURRENT_LIMIT;
       for (let i = 0; i < rollbackState.affectedParameters.length; i += batchSize) {
         const batch = rollbackState.affectedParameters.slice(i, i + batchSize);
-        
+
         // バッチ内の処理を並行実行
         const batchPromises = batch.map(async (paramState) => {
           try {
@@ -843,7 +849,7 @@ export class ParameterStoreService {
             } else if (paramState.action === 'updated' && paramState.previousValue !== undefined) {
               // 更新されたパラメータを元の値に復元
               Logger.info(`Restoring parameter: ${paramState.name}`);
-              
+
               const putCommand = new PutParameterCommand({
                 Name: paramState.name,
                 Value: paramState.previousValue,
@@ -852,7 +858,7 @@ export class ParameterStoreService {
                 KeyId: paramState.previousKmsKeyId,
                 Overwrite: true
               });
-              
+
               await this.putParameterWithRetry(putCommand, paramState.name);
 
               // タグも復元
@@ -900,7 +906,7 @@ export class ParameterStoreService {
    */
   private displayRollbackPreview(rollbackState: RollbackState): void {
     Logger.header('Rollback Preview');
-    
+
     const deleteParams = rollbackState.affectedParameters.filter(p => p.action === 'created');
     const restoreParams = rollbackState.affectedParameters.filter(p => p.action === 'updated');
 
@@ -938,7 +944,7 @@ export class ParameterStoreService {
   private async getRollbackConfirmation(rollbackState: RollbackState): Promise<boolean> {
     const deleteCount = rollbackState.affectedParameters.filter(p => p.action === 'created').length;
     const restoreCount = rollbackState.affectedParameters.filter(p => p.action === 'updated').length;
-    
+
     console.log(chalk.yellow('\n⚠️  WARNING: This will rollback your parameters to the previous state:'));
     if (deleteCount > 0) {
       console.log(chalk.red(`   • ${deleteCount} parameter(s) will be DELETED`));
@@ -983,7 +989,7 @@ export class ParameterStoreService {
         clearTimeout(timeout);
         process.removeListener('SIGINT', sigintHandler);
         rl.close();
-        
+
         const normalizedAnswer = answer.trim().toLowerCase();
         resolve(normalizedAnswer === 'y' || normalizedAnswer === 'yes');
       });

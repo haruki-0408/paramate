@@ -70,15 +70,15 @@ program
 
       // AWS認証情報・リージョン表示（設定とコンテキストを一度で取得）
       const { config, context } = await AWSCredentials.createConfigWithContext({ region: options.region, profile: options.profile });
-      
-      Logger.info(`AWS Context:`);
+
+      Logger.info('AWS Context:');
       Logger.info(`  Account: ${context.account}`);
       Logger.info(`  Region:  ${context.region}`);
       Logger.info(`  User:    ${context.arn}`);
       if (context.profile) {
         Logger.info(`  Profile: ${context.profile}`);
       }
-      
+
       Logger.info(`Starting parameter put from ${options.file}`);
       if (syncOptions.dryRun) {
         Logger.warning('DRY-RUN mode - no changes will be made');
@@ -147,7 +147,7 @@ program
       const now = new Date();
       const timestamp = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}-${String(now.getUTCHours()).padStart(2, '0')}-${String(now.getUTCMinutes()).padStart(2, '0')}-${String(now.getUTCSeconds()).padStart(2, '0')}-UTC`;
       const defaultOutput = `exported-parameters-${timestamp}.csv`;
-      
+
       const exportOptions: ExportOptions = {
         region: options.region,
         profile: options.profile,
@@ -160,15 +160,15 @@ program
 
       // AWS認証情報・リージョン表示（設定とコンテキストを一度で取得）
       const { config, context } = await AWSCredentials.createConfigWithContext({ region: options.region, profile: options.profile });
-      
-      Logger.info(`AWS Context:`);
+
+      Logger.info('AWS Context:');
       Logger.info(`  Account: ${context.account}`);
       Logger.info(`  Region:  ${context.region}`);
       Logger.info(`  User:    ${context.arn}`);
       if (context.profile) {
         Logger.info(`  Profile: ${context.profile}`);
       }
-      
+
       Logger.info('Exporting parameters from AWS Parameter Store...');
       Logger.info(`Path prefix: ${exportOptions.pathPrefix}`);
       Logger.info(`Recursive search: ${exportOptions.recursive ? 'Yes' : 'No'}`);
@@ -183,7 +183,11 @@ program
       }
 
       const csvService = new CSVService();
-      await csvService.exportParametersToCSV(parameters, exportOptions.outputFile!);
+      const outputFile = exportOptions.outputFile;
+      if (!outputFile) {
+        throw new Error('Output file is required');
+      }
+      await csvService.exportParametersToCSV(parameters, outputFile);
 
       Logger.success(`Export completed: ${parameters.length} parameters`);
     } catch (error) {
@@ -235,7 +239,7 @@ program
 
       if (validation.isValid) {
         Logger.success('CSV file is valid');
-        
+
         // 警告がある場合は表示
         if (validation.warnings && validation.warnings.length > 0) {
           Logger.warning('Recommendations:');
@@ -268,15 +272,15 @@ program
     try {
       // AWS認証情報・リージョン表示（設定とコンテキストを一度で取得）
       const { config, context } = await AWSCredentials.createConfigWithContext({ region: options.region, profile: options.profile });
-      
-      Logger.info(`AWS Context:`);
+
+      Logger.info('AWS Context:');
       Logger.info(`  Account: ${context.account}`);
       Logger.info(`  Region:  ${context.region}`);
       Logger.info(`  User:    ${context.arn}`);
       if (context.profile) {
         Logger.info(`  Profile: ${context.profile}`);
       }
-      
+
       Logger.info(`Calculating differences: ${options.file}`);
 
       // CSVファイルのバリデーション
@@ -325,15 +329,15 @@ program
     try {
       // AWS認証情報・リージョン表示（設定とコンテキストを一度で取得）
       const { config, context } = await AWSCredentials.createConfigWithContext({ region: options.region, profile: options.profile });
-      
-      Logger.info(`AWS Context:`);
+
+      Logger.info('AWS Context:');
       Logger.info(`  Account: ${context.account}`);
       Logger.info(`  Region:  ${context.region}`);
       Logger.info(`  User:    ${context.arn}`);
       if (context.profile) {
         Logger.info(`  Profile: ${context.profile}`);
       }
-      
+
       Logger.info('Starting rollback operation...');
 
       // Parameter Storeサービスでrollback実行（同じ認証済み設定を再利用）

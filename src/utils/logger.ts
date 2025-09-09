@@ -81,7 +81,7 @@ export class Logger {
   public static summary(result: { success: number; failed: number; updated: number; skipped: number }): void {
     console.log();
     this.separator();
-    console.log(chalk.bold(`[Summary]`));
+    console.log(chalk.bold('[Summary]'));
     console.log(`  ${chalk.green(`${this.getIcon('success')} Success:`)} ${result.success}`);
     console.log(`  ${chalk.red(`${this.getIcon('error')} Failed:`)} ${result.failed}`);
     console.log(`  ${chalk.green(`${this.getIcon('updated')} Updated:`)} ${result.updated}`);
@@ -93,7 +93,7 @@ export class Logger {
   public static diffSection(title: string, count: number, iconType: 'create' | 'update' | 'skip'): void {
     const sections = {
       create: chalk.green(`[CREATE] ${title} (${count} items):`),
-      update: chalk.green(`[UPDATE] ${title} (${count} items):`), 
+      update: chalk.green(`[UPDATE] ${title} (${count} items):`),
       skip: chalk.gray(`[SKIP] ${title} (${count} items):`)
     };
     console.log(`\n${sections[iconType]}`);

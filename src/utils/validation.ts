@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { CSVRecord } from '../types';
-import { VALIDATION_LIMITS, PARAMETER_TYPES, SECURITY, KMS_KEY_PATTERNS } from '../config/constants';
+import { KMS_KEY_PATTERNS, PARAMETER_TYPES, SECURITY, VALIDATION_LIMITS } from '../config/constants';
 
 // バリデーション結果の基本インターフェース
 interface ValidationResult {
@@ -136,10 +136,10 @@ export class ValidationUtils {
       if (!key || value === undefined) {
         throw new Error(`Invalid tag format '${tag}'. Expected format: 'key=value'`);
       }
-      
+
       const trimmedKey = key.trim();
       const trimmedValue = value.trim();
-      
+
       // タグキー・値の長さチェック
       if (trimmedKey.length > VALIDATION_LIMITS.TAG_KEY_MAX_LENGTH) {
         throw new Error(`Tag key exceeds maximum length: ${trimmedKey.length} characters (maximum allowed: ${VALIDATION_LIMITS.TAG_KEY_MAX_LENGTH})`);
@@ -147,10 +147,10 @@ export class ValidationUtils {
       if (trimmedValue.length > VALIDATION_LIMITS.TAG_VALUE_MAX_LENGTH) {
         throw new Error(`Tag value exceeds maximum length: ${trimmedValue.length} characters (maximum allowed: ${VALIDATION_LIMITS.TAG_VALUE_MAX_LENGTH})`);
       }
-      
+
       return { key: trimmedKey, value: trimmedValue };
     });
-    
+
     return tags;
   }
 
@@ -167,9 +167,9 @@ export class ValidationUtils {
     // 危険なパスパターンをチェック
     for (const pattern of SECURITY.DANGEROUS_PATH_PATTERNS) {
       if (pattern.test(filePath)) {
-        return { 
-          isValid: false, 
-          error: `File path contains dangerous pattern: ${filePath}` 
+        return {
+          isValid: false,
+          error: `File path contains dangerous pattern: ${filePath}`
         };
       }
     }
@@ -177,13 +177,13 @@ export class ValidationUtils {
     try {
       // パスを正規化
       const normalizedPath = path.normalize(filePath);
-      
+
       // 正規化後も危険なパターンをチェック
       for (const pattern of SECURITY.DANGEROUS_PATH_PATTERNS) {
         if (pattern.test(normalizedPath)) {
-          return { 
-            isValid: false, 
-            error: `Normalized file path contains dangerous pattern: ${normalizedPath}` 
+          return {
+            isValid: false,
+            error: `Normalized file path contains dangerous pattern: ${normalizedPath}`
           };
         }
       }
@@ -191,9 +191,9 @@ export class ValidationUtils {
       // パス深度をチェック
       const pathParts = normalizedPath.split(path.sep);
       if (pathParts.length > SECURITY.MAX_PATH_DEPTH) {
-        return { 
-          isValid: false, 
-          error: `File path exceeds maximum depth of ${SECURITY.MAX_PATH_DEPTH}: ${normalizedPath}` 
+        return {
+          isValid: false,
+          error: `File path exceeds maximum depth of ${SECURITY.MAX_PATH_DEPTH}: ${normalizedPath}`
         };
       }
 
@@ -201,18 +201,18 @@ export class ValidationUtils {
       if (path.isAbsolute(normalizedPath)) {
         const restrictedPaths = ['/etc/passwd', '/etc/shadow', '/etc/hosts'];
         if (restrictedPaths.some(restricted => normalizedPath.startsWith(restricted))) {
-          return { 
-            isValid: false, 
-            error: `Access to system files is not allowed: ${normalizedPath}` 
+          return {
+            isValid: false,
+            error: `Access to system files is not allowed: ${normalizedPath}`
           };
         }
       }
 
       return { isValid: true, error: '' };
     } catch (error) {
-      return { 
-        isValid: false, 
-        error: `Error validating file path: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      return {
+        isValid: false,
+        error: `Error validating file path: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
@@ -224,7 +224,7 @@ export class ValidationUtils {
     }
 
     const trimmedKeyId = kmsKeyId.trim();
-    
+
     // 空文字チェック
     if (trimmedKeyId === '') {
       return { isValid: false, error: 'KMS Key ID cannot be empty' };
@@ -232,14 +232,14 @@ export class ValidationUtils {
 
     // パターンマッチング
     const { KEY_ID, ALIAS, ARN } = KMS_KEY_PATTERNS;
-    
+
     if (KEY_ID.test(trimmedKeyId) || ALIAS.test(trimmedKeyId) || ARN.test(trimmedKeyId)) {
       return { isValid: true, error: '' };
     }
 
-    return { 
-      isValid: false, 
-      error: 'KMS Key ID must be a valid UUID, alias (alias/name), or ARN format' 
+    return {
+      isValid: false,
+      error: 'KMS Key ID must be a valid UUID, alias (alias/name), or ARN format'
     };
   }
 
@@ -250,7 +250,7 @@ export class ValidationUtils {
     }
 
     const trimmedName = name.trim();
-    
+
     if (trimmedName === '') {
       return { isValid: false, error: 'Parameter name cannot be empty' };
     }
@@ -260,25 +260,25 @@ export class ValidationUtils {
     }
 
     if (!SECURITY.PARAMETER_NAME_PATTERN.test(trimmedName)) {
-      return { 
-        isValid: false, 
-        error: 'Parameter name contains invalid characters. Only alphanumeric, underscore, period, hyphen, and forward slash are allowed' 
+      return {
+        isValid: false,
+        error: 'Parameter name contains invalid characters. Only alphanumeric, underscore, period, hyphen, and forward slash are allowed'
       };
     }
 
     // 連続するスラッシュの検証
     if (trimmedName.includes('//')) {
-      return { 
-        isValid: false, 
-        error: 'Parameter name cannot contain consecutive forward slashes (//)' 
+      return {
+        isValid: false,
+        error: 'Parameter name cannot contain consecutive forward slashes (//)'
       };
     }
 
     // 末尾のスラッシュの検証（ルートパス以外）
     if (trimmedName.length > 1 && trimmedName.endsWith('/')) {
-      return { 
-        isValid: false, 
-        error: 'Parameter name cannot end with a forward slash (/)' 
+      return {
+        isValid: false,
+        error: 'Parameter name cannot end with a forward slash (/)'
       };
     }
 

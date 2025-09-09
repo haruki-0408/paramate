@@ -100,7 +100,7 @@ export class RollbackService {
       const putDate = new Date(rollbackState.putTimestamp);
       const now = new Date();
       const daysDiff = (now.getTime() - putDate.getTime()) / (1000 * 60 * 60 * 24);
-      
+
       if (daysDiff > 7) {
         Logger.warning('Rollback state is too old (>7 days). Clearing expired state.');
         RollbackService.clearRollbackState();

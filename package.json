@@ -1,7 +1,7 @@
 {
   "name": "paramate",
   "version": "1.0.0",
-  "description": "AWS Parameter StoreにCSVからパラメータを投入・ロールバックするCLIツール",
+  "description": "AWS Parameter StoreにCSVからパラメータを投入するCLIツール",
   "main": "dist/index.js",
   "bin": {
     "prm": "dist/cli/cli.js"
