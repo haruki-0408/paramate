@@ -1,6 +1,6 @@
 {
   "name": "paramate",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AWS Parameter StoreにCSVからパラメータを投入するCLIツール",
   "main": "dist/index.js",
   "bin": {
