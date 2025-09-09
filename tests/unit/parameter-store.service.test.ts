@@ -470,7 +470,7 @@ describe('ParameterStoreService', () => {
       
       // 実装が完了したら以下のようなテストに変更
       // await expect(parameterStoreService.rollback())
-      //   .rejects.toThrow('No rollback state found');
+      //   .rejects.toThrow('No rollback history available. Please run a put operation first.');
       
       expect(true).toBe(true); // プレースホルダー
     });
