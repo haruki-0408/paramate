@@ -1,11 +1,22 @@
 import { ParameterStoreService } from '../../src/services/parameter-store.service';
 import { Parameter, SyncOptions, ExportOptions } from '../../src/types';
 import { SSMClient } from '@aws-sdk/client-ssm';
+import { RollbackService } from '../../src/services/rollback.service';
 
 // テスト出力を汚さないためにコンソールメソッドをモック化
 jest.spyOn(console, 'log').mockImplementation(() => {});
 jest.spyOn(console, 'error').mockImplementation(() => {});
 jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+// RollbackServiceのモック設定
+jest.mock('../../src/services/rollback.service', () => ({
+  RollbackService: {
+    loadRollbackState: jest.fn(),
+    clearRollbackState: jest.fn(),
+    saveRollbackState: jest.fn(),
+    hasRollbackState: jest.fn()
+  }
+}));
 
 /**
  * ParameterStoreService 単体テスト
@@ -29,7 +40,7 @@ describe('ParameterStoreService', () => {
     mockSSMClient = (parameterStoreService as unknown as { ssmClient: jest.Mocked<SSMClient> }).ssmClient;
     
     // getUserConfirmationメソッドをモック化してテストでの無限待機を防ぐ
-    jest.spyOn(parameterStoreService as any, 'getUserConfirmation').mockResolvedValue(true);
+    jest.spyOn(parameterStoreService as unknown as { getUserConfirmation: () => Promise<boolean> }, 'getUserConfirmation').mockResolvedValue(true);
   });
 
   /**
@@ -465,25 +476,68 @@ describe('ParameterStoreService', () => {
    * put操作の直前状態に戻す機能をテスト
    */
   describe('rollback functionality', () => {
-    it('ロールバック状態がない場合に適切なエラーを返すこと', async () => {
-      // まだrollback機能が実装されていないため、将来的なテストプレースホルダー
-      
-      // 実装が完了したら以下のようなテストに変更
-      // await expect(parameterStoreService.rollback())
-      //   .rejects.toThrow('No rollback history available. Please run a put operation first.');
-      
-      expect(true).toBe(true); // プレースホルダー
+    beforeEach(() => {
+      // モックをリセット
+      jest.clearAllMocks();
     });
 
-    it('put操作時に状態を保存すること', async () => {
-      // まだ状態保存機能が実装されていないため、将来的なテストプレースホルダー
+    it('ロールバック状態がない場合に適切なエラーを返すこと', async () => {
+      // RollbackServiceのモック設定：履歴なし
+      (RollbackService.loadRollbackState as jest.Mock).mockResolvedValue(null);
+
+      await expect(parameterStoreService.rollbackParameters())
+        .rejects.toThrow('No rollback history available. Please run a put operation first.');
       
-      // 実装が完了したら以下のようなテストに変更
-      // const parameters: Parameter[] = [/* test parameters */];
-      // await parameterStoreService.syncParameters(parameters, { dryRun: false });
-      // expect(/* state file exists */).toBe(true);
+      expect(RollbackService.loadRollbackState).toHaveBeenCalledTimes(1);
+      expect(RollbackService.clearRollbackState).not.toHaveBeenCalled();
+    });
+
+    it('rollback成功後に履歴をクリアすること', async () => {
+      // RollbackServiceのモック設定：サンプル履歴あり
+      const mockRollbackState = {
+        putTimestamp: '2023-01-01T00:00:00.000Z',
+        region: 'us-east-1',
+        profile: 'default',
+        affectedParameters: [
+          {
+            name: '/app/test',
+            action: 'created' as const
+          }
+        ]
+      };
+
+      (RollbackService.loadRollbackState as jest.Mock).mockResolvedValue(mockRollbackState);
       
-      expect(true).toBe(true); // プレースホルダー
+      // 主要な検証はclearRollbackStateが呼ばれることのみ
+      // 複雑な並行処理のテストは避けて、最重要な仕様変更点のみテスト
+      jest.spyOn(parameterStoreService as unknown as { getRollbackConfirmation: () => Promise<boolean> }, 'getRollbackConfirmation').mockResolvedValue(true);
+      jest.spyOn(parameterStoreService as unknown as { displayRollbackPreview: () => void }, 'displayRollbackPreview').mockImplementation(() => {});
+      jest.spyOn(parameterStoreService as unknown as { deleteParameterWithRetry: () => Promise<void> }, 'deleteParameterWithRetry').mockResolvedValue(undefined);
+
+      await parameterStoreService.rollbackParameters();
+
+      // 最重要な検証：rollback完了後に履歴がクリアされること
+      expect(RollbackService.clearRollbackState).toHaveBeenCalledTimes(1);
+    });
+
+    it('rollbackキャンセル時に履歴を保持すること', async () => {
+      // RollbackServiceのモック設定：履歴あり
+      const mockRollbackState = {
+        putTimestamp: '2023-01-01T00:00:00.000Z',
+        region: 'us-east-1',
+        affectedParameters: [{ name: '/app/test', action: 'created' as const }]
+      };
+
+      (RollbackService.loadRollbackState as jest.Mock).mockResolvedValue(mockRollbackState);
+      
+      // ユーザー確認をモック（No応答）
+      jest.spyOn(parameterStoreService as unknown as { getRollbackConfirmation: () => Promise<boolean> }, 'getRollbackConfirmation').mockResolvedValue(false);
+
+      const result = await parameterStoreService.rollbackParameters();
+
+      expect(result.success).toBe(0);
+      expect(result.errors).toHaveLength(0);
+      expect(RollbackService.clearRollbackState).not.toHaveBeenCalled();
     });
   });
 
@@ -499,7 +553,7 @@ describe('ParameterStoreService', () => {
       mockSSMClient.send = jest.fn().mockResolvedValue(mockTagsResponse);
 
       // Access the private method for testing
-      const tags = await (parameterStoreService as any).getParameterTags('/app/test');
+      const tags = await (parameterStoreService as unknown as { getParameterTags: (name: string) => Promise<Array<{key: string; value: string}>> }).getParameterTags('/app/test');
 
       expect(tags).toEqual([]);
     });
@@ -509,7 +563,7 @@ describe('ParameterStoreService', () => {
 
       mockSSMClient.send = jest.fn().mockResolvedValue(mockTagsResponse);
 
-      const tags = await (parameterStoreService as any).getParameterTags('/app/test');
+      const tags = await (parameterStoreService as unknown as { getParameterTags: (name: string) => Promise<Array<{key: string; value: string}>> }).getParameterTags('/app/test');
 
       expect(tags).toEqual([]);
     });
@@ -518,7 +572,7 @@ describe('ParameterStoreService', () => {
       const error = new Error('Access denied');
       mockSSMClient.send = jest.fn().mockRejectedValue(error);
 
-      const tags = await (parameterStoreService as any).getParameterTags('/app/test');
+      const tags = await (parameterStoreService as unknown as { getParameterTags: (name: string) => Promise<Array<{key: string; value: string}>> }).getParameterTags('/app/test');
 
       expect(tags).toEqual([]);
     });

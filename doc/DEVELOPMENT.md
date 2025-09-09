@@ -61,8 +61,8 @@ paramate/
 ### セットアップ手順
 ```bash
 # 1. リポジトリクローン
-git clone https://github.com/asano-haruki/syncmate.git
-cd syncmate
+git clone https://github.com/asano-haruki/paramate.git
+cd paramate
 
 # 2. 依存関係インストール
 npm install
