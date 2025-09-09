@@ -1,8 +1,15 @@
 import { Parameter, ParameterFromStore, SyncOptions, ExportOptions, SyncResult, ParameterChange, DiffResult } from '../../src/types';
 
+/**
+ * Types 単体テスト
+ * TypeScript型定義の正しさをテスト：
+ * - Parameter、ParameterFromStoreの基本的なインターフェース
+ * - SyncOptions、ExportOptionsの設定オプション
+ * - SyncResult、ParameterChange、DiffResultの結果オブジェクト
+ */
 describe('Types', () => {
   describe('Parameter interface', () => {
-    it('should allow valid parameter object', () => {
+    it('有効なパラメータオブジェクトを受け入れること', () => {
       const parameter: Parameter = {
         name: '/app/test',
         value: 'test-value',
@@ -16,40 +23,47 @@ describe('Types', () => {
       expect(parameter.type).toBe('String');
     });
 
-    it('should allow SecureString type', () => {
+    it('SecureStringタイプをサポートすること', () => {
       const parameter: Parameter = {
         name: '/app/secret',
         value: 'secret-value',
-        type: 'SecureString'
+        type: 'SecureString',
+        description: 'Secret parameter',
+        kmsKeyId: 'alias/secret-key',
+        tags: []
       };
 
       expect(parameter.type).toBe('SecureString');
     });
 
-    it('should allow optional fields to be undefined', () => {
+    it('すべてのフィールドを必須とすること', () => {
       const parameter: Parameter = {
         name: '/app/minimal',
         value: 'value',
-        type: 'String'
+        type: 'String',
+        description: '',
+        kmsKeyId: '',
+        tags: []
       };
 
-      expect(parameter.description).toBeUndefined();
-      expect(parameter.kmsKeyId).toBeUndefined();
-      expect(parameter.tags).toBeUndefined();
+      expect(parameter.description).toBe('');
+      expect(parameter.kmsKeyId).toBe('');
+      expect(parameter.tags).toEqual([]);
     });
   });
 
   describe('ParameterFromStore interface', () => {
-    it('should extend Parameter with additional store fields', () => {
+    it('Parameterを拡張してParameter Store固有のフィールドを追加すること', () => {
       const parameterFromStore: ParameterFromStore = {
         name: '/app/test',
         value: 'test-value',
         type: 'String',
         description: 'Test parameter',
+        kmsKeyId: '',
+        tags: [{ key: 'Environment', value: 'dev' }],
         lastModifiedDate: new Date('2023-01-01'),
         lastModifiedUser: 'test-user',
-        version: 1,
-        tags: [{ key: 'Environment', value: 'dev' }]
+        version: 1
       };
 
       expect(parameterFromStore.lastModifiedDate).toBeInstanceOf(Date);
@@ -58,7 +72,7 @@ describe('Types', () => {
   });
 
   describe('SyncOptions interface', () => {
-    it('should allow valid sync options', () => {
+    it('有効な同期オプションを受け入れること', () => {
       const syncOptions: SyncOptions = {
         dryRun: true,
         region: 'us-east-1',
@@ -71,7 +85,7 @@ describe('Types', () => {
       expect(syncOptions.pathPrefix).toBe('/app');
     });
 
-    it('should allow minimal sync options', () => {
+    it('最小限の同期オプションを受け入れること', () => {
       const syncOptions: SyncOptions = {
         dryRun: false
       };
@@ -82,7 +96,7 @@ describe('Types', () => {
   });
 
   describe('ExportOptions interface', () => {
-    it('should allow valid export options', () => {
+    it('有効なエクスポートオプションを受け入れること', () => {
       const exportOptions: ExportOptions = {
         region: 'us-west-2',
         profile: 'production',
@@ -97,7 +111,7 @@ describe('Types', () => {
       expect(exportOptions.outputFile).toBe('export.csv');
     });
 
-    it('should allow all fields to be optional', () => {
+    it('すべてのフィールドをオプショナルとすること', () => {
       const exportOptions: ExportOptions = {};
 
       expect(Object.keys(exportOptions)).toHaveLength(0);
@@ -105,7 +119,7 @@ describe('Types', () => {
   });
 
   describe('SyncResult interface', () => {
-    it('should track sync operation results', () => {
+    it('同期操作の結果を追跡すること', () => {
       const syncResult: SyncResult = {
         success: 5,
         failed: 1,
@@ -121,17 +135,25 @@ describe('Types', () => {
   });
 
   describe('ParameterChange interface', () => {
-    it('should represent a parameter change', () => {
+    it('パラメータの変更を表現すること', () => {
       const parameter: Parameter = {
         name: '/app/test',
         value: 'new-value',
-        type: 'String'
+        type: 'String',
+        description: 'Test parameter',
+        kmsKeyId: '',
+        tags: []
       };
 
       const existing: ParameterFromStore = {
         name: '/app/test',
         value: 'old-value',
         type: 'String',
+        description: 'Test parameter',
+        kmsKeyId: '',
+        tags: [],
+        lastModifiedDate: new Date(),
+        lastModifiedUser: 'user',
         version: 1
       };
 
@@ -146,31 +168,41 @@ describe('Types', () => {
       expect(change.existing?.value).toBe('old-value');
     });
 
-    it('should support all change types', () => {
+    it('すべての変更タイプをサポートすること', () => {
       const parameter: Parameter = {
         name: '/app/test',
         value: 'value',
-        type: 'String'
+        type: 'String',
+        description: 'Test parameter',
+        kmsKeyId: '',
+        tags: []
       };
 
       const createChange: ParameterChange = {
         type: 'create',
-        parameter
+        parameter,
+        existing: null,
+        reason: 'Parameter does not exist'
       };
 
       const updateChange: ParameterChange = {
         type: 'update',
-        parameter
+        parameter,
+        existing: null,
+        reason: 'Parameter value changed'
       };
 
       const deleteChange: ParameterChange = {
         type: 'delete',
-        parameter
+        parameter,
+        existing: null,
+        reason: 'Parameter to be deleted'
       };
 
       const skipChange: ParameterChange = {
         type: 'skip',
         parameter,
+        existing: null,
         reason: 'No changes detected'
       };
 
@@ -182,15 +214,33 @@ describe('Types', () => {
   });
 
   describe('DiffResult interface', () => {
-    it('should summarize parameter differences', () => {
+    it('パラメータの差分を集約すること', () => {
       const changes: ParameterChange[] = [
         {
           type: 'create',
-          parameter: { name: '/app/new', value: 'value', type: 'String' }
+          parameter: {
+            name: '/app/new',
+            value: 'value',
+            type: 'String',
+            description: '',
+            kmsKeyId: '',
+            tags: []
+          },
+          existing: null,
+          reason: 'New parameter'
         },
         {
           type: 'update',
-          parameter: { name: '/app/existing', value: 'new-value', type: 'String' }
+          parameter: {
+            name: '/app/existing',
+            value: 'new-value',
+            type: 'String',
+            description: '',
+            kmsKeyId: '',
+            tags: []
+          },
+          existing: null,
+          reason: 'Value changed'
         }
       ];
 
