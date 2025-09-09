@@ -67,8 +67,12 @@ lib-cov
 coverage
 *.lcov
 
-# CSV
+# CSV files (ignore exported and test files, keep only sample_template.csv)
 *.CSV
+templates/exported-parameters-*.csv
+templates/test-*.csv
+templates/parameters-template.csv
+!templates/sample_template.csv
 
 # nyc test coverage
 .nyc_output

@@ -1,0 +1,4 @@
+name,value,type,description,kmsKeyId,tags
+/myapp/database/host,localhost,String,Database host name,,"Environment=dev,Project=myapp"
+/myapp/database/password,secret123,SecureString,Database password,alias/parameter-store-key,"Environment=dev,Project=myapp"
+/myapp/api/endpoints,"""api1.example.com,api2.example.com,api3.example.com""",StringList,List of API endpoints,,"Environment=dev,Project=myapp,Type=endpoints"

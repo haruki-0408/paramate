@@ -140,20 +140,151 @@ aws sts get-caller-identity
 aws logs describe-log-groups --log-group-name-prefix /aws/cloudtrail
 ```
 
-## リリース管理
+## NPMパッケージ公開手順
 
-### バージョニング
-- セマンティックバージョニング採用
-- 破壊的変更時のマイグレーションガイド提供
+### 1. 事前準備
 
-### NPM公開
+#### npmアカウント設定
 ```bash
-# バージョン更新
-npm version patch|minor|major
+# npmアカウント作成（未作成の場合）
+# https://www.npmjs.com/signup でアカウント作成
 
-# 公開前チェック
+# ローカルでnpmにログイン
+npm login
+
+# ログイン確認
+npm whoami
+```
+
+### 2. 公開前チェック
+
+#### package.json確認
+
+```bash
+# package.json の内容確認
+cat package.json | jq '{name, version, description, bin, repository, license}'
+```
+
+### 3. ビルドと品質チェック
+
+#### 自動チェック実行
+```bash
+# 全自動チェック（prepublishOnlyスクリプト実行）
+npm run prepublishOnly
+
+# 以下が順次実行される：
+# 1. npm run clean      - distディレクトリ削除
+# 2. npm run build      - TypeScriptビルド  
+# 3. npm run lint       - ESLint実行
+# 4. npm run type-check - TypeScript型チェック
+# 5. npm test          - テスト実行
+```
+
+#### 手動チェック（オプション）
+```bash
+# ビルド確認
+npm run build && ls -la dist/
+
+# テスト確認  
+npm test
+
+# リンター確認
+npm run lint
+
+# 型チェック確認
+npm run type-check
+```
+
+### 4. 公開実行
+
+#### バージョン更新（オプション）
+```bash
+# パッチバージョンアップ（例：1.0.0 → 1.0.1）
+npm version patch
+
+# マイナーバージョンアップ（例：1.0.0 → 1.1.0）  
+npm version minor
+
+# メジャーバージョンアップ（例：1.0.0 → 2.0.0）
+npm version major
+```
+
+#### 公開前ドライラン
+```bash
+# 公開内容確認（実際には公開されない）
 npm publish --dry-run
 
-# 実際の公開
-npm publish
+# 公開されるファイル一覧確認
+npm pack --dry-run
 ```
+
+#### 実際の公開
+```bash
+# npm に公開実行
+npm publish
+
+# または特定のタグで公開
+npm publish --tag latest
+```
+
+### 5. 公開後の確認
+
+#### パッケージ公開確認
+```bash
+# 公開されたパッケージ情報確認
+npm view paramate
+
+# バージョン確認
+npm view paramate version
+
+# 公開されたファイル確認
+npm view paramate files
+```
+
+#### インストールテスト
+```bash
+# 別のディレクトリでテスト
+cd /tmp
+mkdir npm-test && cd npm-test
+
+# グローバルインストールテスト
+npm install -g paramate
+
+# コマンド動作確認
+prm --version
+prm --help
+
+# アンインストール
+npm uninstall -g paramate
+```
+
+### 6. 公開後の作業
+
+#### GitHubタグ作成
+```bash
+# 公開したバージョンにタグ付け
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## 重要な注意事項
+
+### セキュリティ
+- **絶対に機密情報をコミット・公開しない**
+- `.npmignore`で不要ファイルを除外
+- `files`フィールドで公開ファイルを明示的に指定
+
+### バージョン管理
+- **一度公開したバージョンは変更不可**
+- 問題がある場合は新しいバージョンで修正
+- セマンティックバージョニングに従う
+
+### 公開前確認項目チェックリスト
+- [ ] ビルドが成功する
+- [ ] すべてのテストが通る  
+- [ ] lintエラーがない
+- [ ] TypeScript型エラーがない
+- [ ] package.jsonの情報が正確
+- [ ] READMEが最新の内容
+- [ ] 機密情報が含まれていない
+- [ ] `.npmignore`が適切に設定されている
