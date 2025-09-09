@@ -8,6 +8,7 @@ import { Logger } from '../utils/logger';
 import { AWSCredentials } from '../config/awsCredentials';
 import { ExportOptions, SyncOptions } from '../types';
 import { FILE_PATHS } from '../config/constants';
+import * as packageJson from '../../package.json';
 
 interface CliSyncOptions {
   file: string;
@@ -47,7 +48,7 @@ const program = new Command();
 program
   .name('prm')
   .description('Tool to put parameters from CSV to AWS Parameter Store with rollback support')
-  .version('1.0.0');
+  .version(packageJson.version);
 
 // Put コマンド（旧 sync から名前変更）
 program
