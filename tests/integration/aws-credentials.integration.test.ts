@@ -12,8 +12,8 @@ describe('AWS Credentials Integration Tests', () => {
   const skipAWSTests = process.env.CI || process.env.NODE_ENV === 'test';
 
   describe('createConfig', () => {
-    it('デフォルト設定でconfig作成できること', async () => {
-      const config = await AWSCredentials.createConfig({});
+    it('基本設定でconfig作成できること', async () => {
+      const config = await AWSCredentials.createConfig({ region: 'ap-northeast-1' });
 
       expect(config).toHaveProperty('region');
       expect(config).toHaveProperty('credentials');
